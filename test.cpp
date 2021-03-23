@@ -31,7 +31,7 @@ protected:
     }
 
     // Source: https://stackoverflow.com/a/24586587
-    std::string getRandomString(std::string::size_type length) {
+    static std::string getRandomString(std::string::size_type length) {
         static auto &chrs = "0123456789"
                             "abcdefghijklmnopqrstuvwxyz"
                             "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -139,7 +139,7 @@ TEST_F(CSVTest, floatTest) {
 }
 
 TEST_F(CSVTest, stringTest) {
-    csv_test<std::string>(5, [this] { return std::to_string(getRandomInt()); });;
+    csv_test<std::string>(5, [] { return getRandomString(40);});
 }
 
 TEST_F(CSVTest, boolTest) {
@@ -172,6 +172,17 @@ TEST_F(ConstructorTest, fromInitializerListTest) {
     EXPECT_EQ(csv.numElements(), 11);
 }
 
+TEST_F(ConstructorTest, appendTest) {
+    markusjx::csv csv1 = {{"abc", 1,  5,    'd',   false},
+                         {25,    42, true, "def", nullptr, "ye"}};
+    markusjx::csv csv2 = {{"abc", 1,  5,    'd',   false},
+                          {25,    42, true, "def", nullptr, "ye"}};
+
+    csv1 << csv2;
+
+    EXPECT_EQ(csv1.numElements(), 22);
+}
+
 class EqualityTest : public CSVTestBase {
 };
 
@@ -188,6 +199,238 @@ TEST_F(EqualityTest, equalsTest) {
     }
 
     EXPECT_EQ(csv_1, csv_2);
+}
+
+TEST_F(EqualityTest, unequalTest) {
+    markusjx::csv csv_1, csv_2;
+    csv_1 << 1;
+    csv_2 << 2;
+
+    EXPECT_NE(csv_1, csv_2);
+
+    csv_1[0][0] = "1";
+    EXPECT_NE(csv_1, csv_2);
+
+    csv_1[0][0] = 1.0;
+    csv_2[0][0] = 1;
+    EXPECT_NE(csv_1, csv_2);
+}
+
+TEST_F(EqualityTest, spaceshipTest) {
+    markusjx::csv csv;
+    for (int i = 0; i < numValues; i++) {
+        int n1 = getRandomInt();
+        int n2 = getRandomInt();
+        csv[0][0] = n1;
+
+        if (n1 > n2) {
+            EXPECT_GT(csv[0][0], n2);
+        } else if (n1 == n2) {
+            EXPECT_EQ(csv[0][0], n2);
+        } else {
+            EXPECT_LT(csv[0][0], n2);
+        }
+
+        if (n1 >= n2) {
+            EXPECT_GE(csv[0][0], n2);
+        } else if (n1 <= n2) {
+            EXPECT_LE(csv[0][0], n2);
+        }
+    }
+}
+
+class NumberTest : public CSVTestBase {
+};
+
+TEST_F(NumberTest, incrementTest) {
+    markusjx::csv csv;
+
+    for (int i = 0; i < 100; i++) {
+        int n = std::abs(getRandomInt() % 1000);
+        for (csv[0][0] = 0; csv[0][0] < n; csv[0][0]++);
+
+        ASSERT_EQ(csv[0][0], n);
+    }
+}
+
+TEST_F(NumberTest, decrementTest) {
+    markusjx::csv csv;
+
+    for (int i = 0; i < 100; i++) {
+        int n = std::abs(getRandomInt() % 1000);
+        for (csv[0][0] = n; csv[0][0] > 0; csv[0][0]--);
+
+        ASSERT_EQ(csv[0][0], 0);
+    }
+}
+
+TEST_F(NumberTest, addTest) {
+    for (int i = 0; i < numValues; i++) {
+        int n1 = getRandomInt();
+        int n2 = getRandomInt();
+
+        markusjx::csv csv = {n1};
+        markusjx::csv _csv = {csv[0][0] + n2};
+
+        ASSERT_EQ(_csv[0][0], n1 + n2);
+    }
+}
+
+TEST_F(NumberTest, subTest) {
+    for (int i = 0; i < numValues; i++) {
+        int n1 = getRandomInt();
+        int n2 = getRandomInt();
+
+        markusjx::csv csv = {n1};
+        markusjx::csv _csv = {csv[0][0] - n2};
+
+        ASSERT_EQ(_csv[0][0], n1 - n2);
+    }
+}
+
+TEST_F(NumberTest, mulTest) {
+    for (int i = 0; i < numValues; i++) {
+        int n1 = getRandomInt();
+        int n2 = getRandomInt();
+
+        markusjx::csv csv = {n1};
+        markusjx::csv _csv = {csv[0][0] * n2};
+
+        ASSERT_EQ(_csv[0][0], n1 * n2);
+    }
+}
+
+TEST_F(NumberTest, divTest) {
+    for (int i = 0; i < numValues; i++) {
+        int n1 = getRandomInt();
+        int n2 = getRandomInt();
+
+        markusjx::csv csv = {n1};
+        markusjx::csv _csv = {csv[0][0] / n2};
+
+        ASSERT_EQ(_csv[0][0], n1 / n2);
+    }
+}
+
+TEST_F(NumberTest, addAssignTest) {
+    for (int i = 0; i < numValues; i++) {
+        int n1 = getRandomInt();
+        int n2 = getRandomInt();
+
+        markusjx::csv csv = {n1};
+        csv[0][0] += n2;
+
+        ASSERT_EQ(csv[0][0], n1 + n2);
+    }
+}
+
+TEST_F(NumberTest, subAssignTest) {
+    for (int i = 0; i < numValues; i++) {
+        int n1 = getRandomInt();
+        int n2 = getRandomInt();
+
+        markusjx::csv csv = {n1};
+        csv[0][0] -= n2;
+
+        ASSERT_EQ(csv[0][0], n1 - n2);
+    }
+}
+
+TEST_F(NumberTest, mulAssignTest) {
+    for (int i = 0; i < numValues; i++) {
+        int n1 = getRandomInt();
+        int n2 = getRandomInt();
+
+        markusjx::csv csv = {n1};
+        csv[0][0] *= n2;
+
+        ASSERT_EQ(csv[0][0], n1 * n2);
+    }
+}
+
+TEST_F(NumberTest, divAssignTest) {
+    for (int i = 0; i < numValues; i++) {
+        int n1 = getRandomInt();
+        int n2 = getRandomInt();
+
+        markusjx::csv csv = {n1};
+        csv[0][0] /= n2;
+
+        ASSERT_EQ(csv[0][0], n1 / n2);
+    }
+}
+
+class ObjectOperationsTest : public CSVTestBase {
+};
+
+TEST_F(ObjectOperationsTest, addTest) {
+    for (int i = 0; i < numValues; i++) {
+        int n1 = getRandomInt();
+        int n2 = getRandomInt();
+
+        markusjx::csv c1 = {n1};
+        markusjx::csv c2 = {n2};
+
+        ASSERT_EQ(c1[0][0] + c2[0][0], n1 + n2);
+    }
+}
+
+TEST_F(ObjectOperationsTest, subTest) {
+    for (int i = 0; i < numValues; i++) {
+        int n1 = getRandomInt();
+        int n2 = getRandomInt();
+
+        markusjx::csv c1 = {n1};
+        markusjx::csv c2 = {n2};
+
+        ASSERT_EQ(c1[0][0] - c2[0][0], n1 - n2);
+    }
+}
+
+TEST_F(ObjectOperationsTest, mulTest) {
+    for (int i = 0; i < numValues; i++) {
+        long long n1 = getRandomInt();
+        long long n2 = getRandomInt();
+
+        markusjx::csv c1 = {n1};
+        markusjx::csv c2 = {n2};
+
+        ASSERT_EQ(c1[0][0] * c2[0][0], n1 * n2);
+    }
+}
+
+TEST_F(ObjectOperationsTest, divTest) {
+    for (int i = 0; i < numValues; i++) {
+        int n1 = getRandomInt();
+        int n2 = getRandomInt();
+
+        markusjx::csv c1 = {n1};
+        markusjx::csv c2 = {n2};
+
+        ASSERT_EQ(c1[0][0] / c2[0][0], n1 / n2);
+    }
+}
+
+class FileTest : public CSVTestBase {
+protected:
+    static markusjx::csv csv;
+};
+
+markusjx::csv FileTest::csv = {{"abc", 1,  5,    'd',   false},
+                               {25,    42, true, "def", nullptr, "ye"}};
+
+TEST_F(FileTest, writeTest) {
+    std::ofstream ofs("test.csv");
+    ofs << csv;
+    ofs.close();
+}
+
+TEST_F(FileTest, readTest) {
+    markusjx::csv c;
+    std::ifstream ifs("test.csv");
+    ifs >> c;
+
+    EXPECT_EQ(c, csv);
 }
 
 int main(int argc, char **argv) {

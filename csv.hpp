@@ -30,6 +30,7 @@
 #include <vector>
 #include <sstream>
 #include <string>
+#include <regex>
 
 #if defined(_MSVC_LANG) || defined(__cplusplus)
 #   if (defined(_MSVC_LANG) && _MSVC_LANG > 201703L) || __cplusplus > 201703L // C++20
@@ -73,7 +74,7 @@ namespace markusjx {
                 pos = str.find(delimiter, prev);
                 if (pos == T::npos) pos = str.length();
                 T token = str.substr(prev, pos - prev);
-                if (!token.empty()) tokens.push_back(token);
+                tokens.push_back(token);
                 prev = pos + 1;
             } while (pos < str.length() && prev < str.length());
             return tokens;
@@ -342,9 +343,37 @@ namespace markusjx {
             }
         }
 
+        CSV_NODISCARD bool operator<(const csvrowcolumn<T> &other) const {
+            if (this->isFloatingPoint() && other.isFloatingPoint()) {
+                return this->as<long double>() < other.as<long double>();
+            } else if (this->isFloatingPoint() && other.isDecimal()) {
+                return this->as<long double>() < other.as<long long>();
+            } else if (this->isDecimal() && other.isFloatingPoint()) {
+                return this->as<long long>() < other.as<long double>();
+            } else if (this->isDecimal() && other.isDecimal()) {
+                return this->as<long long>() < other.as<long long>();
+            } else {
+                return this->value < other.value;
+            }
+        }
+
         template<class U>
         CSV_NODISCARD bool operator<(const U &val) const {
             return this->as<U>() < val;
+        }
+
+        CSV_NODISCARD bool operator<=(const csvrowcolumn<T> &other) const {
+            if (this->isFloatingPoint() && other.isFloatingPoint()) {
+                return this->as<long double>() <= other.as<long double>();
+            } else if (this->isFloatingPoint() && other.isDecimal()) {
+                return this->as<long double>() <= other.as<long long>();
+            } else if (this->isDecimal() && other.isFloatingPoint()) {
+                return this->as<long long>() <= other.as<long double>();
+            } else if (this->isDecimal() && other.isDecimal()) {
+                return this->as<long long>() <= other.as<long long>();
+            } else {
+                return this->value <= other.value;
+            }
         }
 
         template<class U>
@@ -352,14 +381,70 @@ namespace markusjx {
             return this->as<U>() <= val;
         }
 
+        CSV_NODISCARD bool operator>(const csvrowcolumn<T> &other) const {
+            if (this->isFloatingPoint() && other.isFloatingPoint()) {
+                return this->as<long double>() > other.as<long double>();
+            } else if (this->isFloatingPoint() && other.isDecimal()) {
+                return this->as<long double>() > other.as<long long>();
+            } else if (this->isDecimal() && other.isFloatingPoint()) {
+                return this->as<long long>() > other.as<long double>();
+            } else if (this->isDecimal() && other.isDecimal()) {
+                return this->as<long long>() > other.as<long long>();
+            } else {
+                return this->value > other.value;
+            }
+        }
+
         template<class U>
         CSV_NODISCARD bool operator>(const U &val) const {
             return this->as<U>() > val;
         }
 
+        CSV_NODISCARD bool operator>=(const csvrowcolumn<T> &other) const {
+            if (this->isFloatingPoint() && other.isFloatingPoint()) {
+                return this->as<long double>() >= other.as<long double>();
+            } else if (this->isFloatingPoint() && other.isDecimal()) {
+                return this->as<long double>() >= other.as<long long>();
+            } else if (this->isDecimal() && other.isFloatingPoint()) {
+                return this->as<long long>() >= other.as<long double>();
+            } else if (this->isDecimal() && other.isDecimal()) {
+                return this->as<long long>() >= other.as<long long>();
+            } else {
+                return this->value >= other.value;
+            }
+        }
+
         template<class U>
         CSV_NODISCARD bool operator>=(const U &val) const {
             return this->as<U>() >= val;
+        }
+
+        const csvrowcolumn<T> operator++(int) {
+            if (isDecimal()) {
+                this->operator=(this->as<long long>() + 1);
+            } else {
+                this->operator=(this->as<long double>() + 1.0);
+            }
+            return *this;
+        }
+
+        const csvrowcolumn<T> operator--(int) {
+            if (isDecimal()) {
+                this->operator=(this->as<long long>() - 1);
+            } else {
+                this->operator=(this->as<long double>() - 1.0);
+            }
+            return *this;
+        }
+
+        CSV_NODISCARD csvrowcolumn<T> operator+(const csvrowcolumn<T> &val) const {
+            if (this->isFloatingPoint() || val.isFloatingPoint()) {
+                return csvrowcolumn(this->as<long double>() + val.as<long double>());
+            } else if (this->isNumber() && val.isNumber()) {
+                return csvrowcolumn(this->as<long long>() + val.as<long long>());
+            } else {
+                throw std::runtime_error("The value is not a number");
+            }
         }
 
         template<class U>
@@ -368,18 +453,18 @@ namespace markusjx {
         }
 
         template<class U>
-        CSV_NODISCARD csvrowcolumn<T> &operator+=(const U &val) {
+        csvrowcolumn<T> &operator+=(const U &val) {
             return this->operator=(this->operator+(val));
         }
 
-        CSV_NODISCARD const csvrowcolumn<T> operator++(int) {
-            this->operator=(this->as<long long>() + 1);
-            return *this;
-        }
-
-        CSV_NODISCARD const csvrowcolumn<T> operator--(int) {
-            this->operator=(this->as<long long>() - 1);
-            return *this;
+        CSV_NODISCARD csvrowcolumn<T> operator-(const csvrowcolumn<T> &val) const {
+            if (this->isFloatingPoint() || val.isFloatingPoint()) {
+                return csvrowcolumn(this->as<long double>() - val.as<long double>());
+            } else if (this->isNumber() && val.isNumber()) {
+                return csvrowcolumn(this->as<long long>() - val.as<long long>());
+            } else {
+                throw std::runtime_error("The value is not a number");
+            }
         }
 
         template<class U>
@@ -388,8 +473,18 @@ namespace markusjx {
         }
 
         template<class U>
-        CSV_NODISCARD csvrowcolumn<T> &operator-=(const U &val) {
+        csvrowcolumn<T> &operator-=(const U &val) {
             return this->operator=(this->operator-(val));
+        }
+
+        CSV_NODISCARD csvrowcolumn<T> operator*(const csvrowcolumn<T> &val) const {
+            if (this->isFloatingPoint() || val.isFloatingPoint()) {
+                return csvrowcolumn(this->as<long double>() * val.as<long double>());
+            } else if (this->isNumber() && val.isNumber()) {
+                return csvrowcolumn(this->as<long long>() * val.as<long long>());
+            } else {
+                throw std::runtime_error("The value is not a number");
+            }
         }
 
         template<class U>
@@ -398,8 +493,18 @@ namespace markusjx {
         }
 
         template<class U>
-        CSV_NODISCARD csvrowcolumn<T> &operator*=(const U &val) {
+        csvrowcolumn<T> &operator*=(const U &val) {
             return this->operator=(this->operator*(val));
+        }
+
+        CSV_NODISCARD csvrowcolumn<T> operator/(const csvrowcolumn<T> &val) const {
+            if (this->isFloatingPoint() || val.isFloatingPoint()) {
+                return csvrowcolumn(this->as<long double>() / val.as<long double>());
+            } else if (this->isNumber() && val.isNumber()) {
+                return csvrowcolumn(this->as<long long>() / val.as<long long>());
+            } else {
+                throw std::runtime_error("The value is not a number");
+            }
         }
 
         template<class U>
@@ -408,8 +513,23 @@ namespace markusjx {
         }
 
         template<class U>
-        CSV_NODISCARD csvrowcolumn<T> &operator/=(const U &val) {
+        csvrowcolumn<T> &operator/=(const U &val) {
             return this->operator=(this->operator/(val));
+        }
+
+        CSV_NODISCARD bool isNumber() const {
+            const static std::regex number_regex("^-?[0-9]+(\\.[0-9]+)?$");
+            return std::regex_match(value, number_regex);
+        }
+
+        CSV_NODISCARD bool isDecimal() const {
+            const static std::regex decimal_regex("^-?[0-9]+$");
+            return std::regex_match(value, decimal_regex);
+        }
+
+        CSV_NODISCARD bool isFloatingPoint() const {
+            const static std::regex float_regex("^-?[0-9]+\\.[0-9]+$");
+            return std::regex_match(value, float_regex);
         }
 
     private:
@@ -651,6 +771,14 @@ namespace markusjx {
             return this->at(index);
         }
 
+        basic_csv<T> &operator<<(const basic_csv<T> &other) {
+            for (const csvrow<T> &row : other) {
+                rows.push_back(row);
+            }
+
+            return *this;
+        }
+
         basic_csv<T> &operator<<(const csvrowcolumn<T> &col) {
             get_current() << col;
             return *this;
@@ -809,6 +937,32 @@ namespace markusjx {
             }
 
             return ostream;
+        }
+
+        template<class U>
+        friend std::istream &operator>>(std::istream &istream, basic_csv<U> &csv) {
+            std::string res(std::istreambuf_iterator<char>(istream), {});
+
+            if constexpr (std::is_same_v<U, std::string>) {
+                csv << basic_csv::parse(res, csv.separator);
+            } else if constexpr (std::is_same_v<U, std::wstring>) {
+                csv << basic_csv::parse(util::string_to_wstring(res), csv.separator);
+            }
+
+            return istream;
+        }
+
+        template<class U>
+        friend std::wistream &operator>>(std::wistream &istream, basic_csv<U> &csv) {
+            std::wstring res(std::istreambuf_iterator<wchar_t>(istream), {});
+
+            if constexpr (std::is_same_v<U, std::string>) {
+                csv << basic_csv::parse(util::wstring_to_string(res), csv.separator);
+            } else if constexpr (std::is_same_v<U, std::wstring>) {
+                csv << basic_csv::parse(res, csv.separator);
+            }
+
+            return istream;
         }
 
     private:
