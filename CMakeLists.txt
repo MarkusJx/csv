@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
+enable_testing()
 project(csv)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -33,3 +34,7 @@ if (WIN32)
 else ()
     target_link_libraries(${PROJECT_NAME} PRIVATE gtest_main gtest pthread)
 endif ()
+
+add_test(NAME csvTest
+        COMMAND csv --config $<CONFIG>
+        --exe $<TARGET_FILE:csv>)
