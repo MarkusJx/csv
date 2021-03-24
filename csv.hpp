@@ -115,7 +115,7 @@ namespace markusjx {
             std::string out(in.size() + 1, ' ');
             size_t outSize;
 
-            errno_t err = wcstombs_s(&outSize, out.data(), out.size(), in.c_str(), in.size());
+            int err = wcstombs_s(&outSize, out.data(), out.size(), in.c_str(), in.size());
             if (err) {
                 throw std::runtime_error("Could not create the string");
             }
@@ -128,7 +128,7 @@ namespace markusjx {
             std::wstring out(in.size() + 1, L' ');
 
             size_t outSize;
-            errno_t err = mbstowcs_s(&outSize, (wchar_t *) out.data(), out.size(), in.c_str(), in.size());
+            int err = mbstowcs_s(&outSize, (wchar_t *) out.data(), out.size(), in.c_str(), in.size());
             if (err) {
                 throw std::runtime_error("Could not create the string");
             }
