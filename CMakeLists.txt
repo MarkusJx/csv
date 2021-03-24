@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
-enable_testing()
 project(csv)
+enable_testing()
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -29,7 +29,7 @@ target_link_directories(${PROJECT_NAME} PRIVATE ${gtest_dir}/lib)
 add_dependencies(${PROJECT_NAME} gtest_project)
 
 # Link test against gtest
-if (WIN32)
+if (WIN32 AND ${CMAKE_BUILD_TYPE} STREQUAL "Debug")
     target_link_libraries(${PROJECT_NAME} PRIVATE gtest_maind gtestd)
 else ()
     target_link_libraries(${PROJECT_NAME} PRIVATE gtest_main gtest pthread)
