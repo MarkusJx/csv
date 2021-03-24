@@ -32,7 +32,11 @@ add_dependencies(${PROJECT_NAME} gtest_project)
 if (WIN32 AND ${CMAKE_BUILD_TYPE} STREQUAL "Debug")
     target_link_libraries(${PROJECT_NAME} PRIVATE gtest_maind gtestd)
 else ()
-    target_link_libraries(${PROJECT_NAME} PRIVATE gtest_main gtest pthread)
+    if (WIN32)
+        target_link_libraries(${PROJECT_NAME} PRIVATE gtest_main gtest)
+    else ()
+        target_link_libraries(${PROJECT_NAME} PRIVATE gtest_main gtest pthread)
+    endif ()
 endif ()
 
 add_test(NAME csvTest
