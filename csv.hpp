@@ -59,12 +59,19 @@
 #   define CSV_REQUIRES(type, ...)
 #endif //CSV_REQUIRES
 
-#define CSV_CHECK_T_SUPPORTED static_assert(util::is_any_of_v<T, std::string, std::wstring>, "T must be one of: [std::string, std::wstring]");
+#define CSV_CHECK_T_SUPPORTED static_assert(::markusjx::util::is_u8_string_v<T> || ::markusjx::util::is_u16_string_v<T>,\
+                                            "T must be one of: [std::string, std::wstring]");
 
 namespace markusjx {
     namespace util {
         template<class T, class... Types>
         inline constexpr bool is_any_of_v = std::disjunction_v<std::is_same<T, Types>...>;
+
+        template<class T>
+        inline constexpr bool is_u8_string_v = is_any_of_v<T, std::string>;
+
+        template<class T>
+        inline constexpr bool is_u16_string_v = is_any_of_v<T, std::wstring>;
 
         template<class T>
         inline std::vector<T> splitString(const T &str, char delimiter) {
@@ -86,7 +93,6 @@ namespace markusjx {
             T res = conversionFunc(str, &idx);
 
             if (idx != 0 && idx != str.size()) {
-                std::cout << str << ", parsed: " << res << ", idx: " << idx << std::endl;
                 throw std::runtime_error("Could not fully convert the value");
             } else {
                 return res;
@@ -114,7 +120,7 @@ namespace markusjx {
                 throw std::runtime_error("Could not create the string");
             }
 
-            out.resize(outSize);
+            out.resize(in.size());
             return out;
         }
 
@@ -127,7 +133,7 @@ namespace markusjx {
                 throw std::runtime_error("Could not create the string");
             }
 
-            out.resize(outSize);
+            out.resize(in.size());
             return out;
         }
     }
@@ -137,9 +143,8 @@ namespace markusjx {
     public:
         CSV_CHECK_T_SUPPORTED
 
-        template<class U>
-        static csvrowcolumn<U> parse(const U &value) {
-            csvrowcolumn<U> col(nullptr);
+        static csvrowcolumn<T> parse(const T &value) {
+            csvrowcolumn<T> col(nullptr);
             col.value = value;
 
             return col;
@@ -149,15 +154,22 @@ namespace markusjx {
 
         csvrowcolumn(const T &val) : value('"' + val + '"') {}
 
-        CSV_REQUIRES(T, std::string)
+        CSV_REQUIRES(T, std::wstring)
+        csvrowcolumn(const std::string &val) : value(L'"' + util::string_to_wstring(val) + L'"') {}
+
         csvrowcolumn(char val) : value() {
             value += '"';
             value += val;
             value += '"';
         }
 
-        CSV_REQUIRES(T, std::string)
-        csvrowcolumn(const char *val) : value('"' + T(val) + '"') {}
+        csvrowcolumn(const char *val) {
+            if constexpr (util::is_u8_string_v<T>) {
+                value = '"' + T(val) + '"';
+            } else if constexpr (util::is_u16_string_v<T>) {
+                value = L'"' + util::string_to_wstring(val) + L'"';
+            }
+        }
 
         CSV_REQUIRES(T, std::wstring)
         csvrowcolumn(wchar_t val) : value() {
@@ -170,32 +182,48 @@ namespace markusjx {
         csvrowcolumn(const wchar_t *val) : value(L'"' + T(val) + L'"') {}
 
         csvrowcolumn(bool val) {
-            if constexpr (std::is_same_v<T, std::string>) {
-                value = '"' + std::string(val ? "true" : "false") + '"';
-            } else if constexpr (std::is_same_v<T, std::wstring>) {
-                value = L'"' + std::wstring(val ? L"true" : L"false") + L'"';
+            if constexpr (util::is_u8_string_v<T>) {
+                value = T(val ? "true" : "false");
+            } else if constexpr (util::is_u16_string_v<T>) {
+                value = T(val ? L"true" : L"false");
             }
         }
 
         template<class U>
         csvrowcolumn(const U &val) {
-            if constexpr (std::is_same_v<T, std::string>) {
+            if constexpr (util::is_u8_string_v<T>) {
                 value = std::to_string(val);
-            } else if constexpr (std::is_same_v<T, std::wstring>) {
+            } else if constexpr (util::is_u16_string_v<T>) {
                 value = std::to_wstring(val);
             }
         }
 
         csvrowcolumn<T> &operator=(const csvrowcolumn<T> &) = default;
 
-        csvrowcolumn<T> &operator=(const T &val) {
-            value = '"' + val + '"';
+        csvrowcolumn<T> &operator=(std::nullptr_t) {
+            if constexpr (util::is_u8_string_v<T>) {
+                value = "";
+            } else if constexpr (util::is_u8_string_v<T>) {
+                value = L"";
+            }
+
             return *this;
         }
 
-        CSV_REQUIRES(T, std::string)
+        csvrowcolumn<T> &operator=(const T &val) {
+            value = T();
+            value += '"';
+            value += val;
+            value += '"';
+            return *this;
+        }
+
         csvrowcolumn<T> &operator=(const char *val) {
-            value = '"' + T(val) + '"';
+            if constexpr (util::is_u8_string_v<T>) {
+                value = '"' + T(val) + '"';
+            } else if constexpr (util::is_u16_string_v<T>) {
+                value = L'"' + util::string_to_wstring(val) + L'"';
+            }
             return *this;
         }
 
@@ -206,16 +234,15 @@ namespace markusjx {
         }
 
         csvrowcolumn<T> &operator=(bool val) {
-            if constexpr (std::is_same_v<T, std::string>) {
-                value = '"' + std::string(val ? "true" : "false") + '"';
-            } else if constexpr (std::is_same_v<T, std::wstring>) {
-                value = L'"' + std::wstring(val ? L"true" : L"false") + L'"';
+            if constexpr (util::is_u8_string_v<T>) {
+                value = std::string(val ? "true" : "false");
+            } else if constexpr (util::is_u16_string_v<T>) {
+                value = std::wstring(val ? L"true" : L"false");
             }
 
             return *this;
         }
 
-        CSV_REQUIRES(T, std::string)
         csvrowcolumn<T> &operator=(char val) {
             value = T();
             value += '"';
@@ -233,11 +260,17 @@ namespace markusjx {
             return *this;
         }
 
+        CSV_REQUIRES(T, std::wstring)
+        csvrowcolumn &operator=(const std::string &val) {
+            value = L'"' + util::string_to_wstring(val) + L'"';
+            return *this;
+        }
+
         template<class U>
         csvrowcolumn &operator=(const U &val) {
-            if constexpr (std::is_same_v<T, std::string>) {
+            if constexpr (util::is_u8_string_v<T>) {
                 value = std::to_string(val);
-            } else if constexpr (std::is_same_v<T, std::wstring>) {
+            } else if constexpr (util::is_u16_string_v<T>) {
                 value = std::to_wstring(val);
             }
 
@@ -309,11 +342,10 @@ namespace markusjx {
         }
 
         CSV_NODISCARD operator bool() const {
-            T val = this->operator T();
-            if constexpr (std::is_same_v<T, std::string>) {
-                return op_bool_impl(val, "true", "false");
-            } else if constexpr (std::is_same_v<T, std::wstring>) {
-                return op_bool_impl(val, L"true", L"false");
+            if constexpr (util::is_u8_string_v<T>) {
+                return op_bool_impl(value, "true", "false");
+            } else if constexpr (util::is_u16_string_v<T>) {
+                return op_bool_impl(value, L"true", L"false");
             }
         }
 
@@ -325,6 +357,11 @@ namespace markusjx {
         template<class U>
         CSV_NODISCARD bool operator==(const U &val) const {
             return this->as<U>() == val;
+        }
+
+        template<class U>
+        CSV_NODISCARD bool operator!=(const U &val) const {
+            return this->as<U>() != val;
         }
 
         CSV_NODISCARD bool operator==(const csvrowcolumn<T> &other) const {
@@ -517,6 +554,10 @@ namespace markusjx {
             return this->operator=(this->operator/(val));
         }
 
+        CSV_NODISCARD bool empty() const {
+            return value.empty();
+        }
+
         CSV_NODISCARD bool isNumber() const {
             const static std::regex number_regex("^-?[0-9]+(\\.[0-9]+)?$");
             return std::regex_match(value, number_regex);
@@ -552,11 +593,10 @@ namespace markusjx {
     public:
         CSV_CHECK_T_SUPPORTED
 
-        template<class U>
-        static csvrow<U> parse(const U &value, const char separator) {
+        static csvrow<T> parse(const T &value, const char separator) {
             csvrow row(nullptr);
-            for (const U &col : util::splitString(value, separator)) {
-                row << csvrowcolumn<U>::parse(col);
+            for (const T &col : util::splitString(value, separator)) {
+                row << csvrowcolumn<T>::parse(col);
             }
 
             return row;
@@ -703,12 +743,9 @@ namespace markusjx {
     public:
         CSV_CHECK_T_SUPPORTED
 
-        template<class U>
-        static basic_csv<U> parse(const U &value, const char separator = ';') {
-            basic_csv<U> csv;
-            for (const U &row : util::splitString(value, '\n')) {
-                csv << csvrow<U>::parse(row, separator);
-            }
+        static basic_csv<T> parse(const T &value, const char separator = ';') {
+            basic_csv<T> csv(separator);
+            csv.parseImpl(value);
 
             return csv;
         }
@@ -720,22 +757,28 @@ namespace markusjx {
 
         explicit basic_csv(char separator = ';') : rows(), separator(separator) {}
 
+        basic_csv(std::nullptr_t, char separator = ';') : rows(), separator(separator) {}
+
         basic_csv(const T &value, char separator = ';') : rows(), separator(separator) {
-            for (const T &row : util::splitString(value, '\n')) {
-                rows.push_back(csvrow<T>::parse(row, separator));
-            }
+            this->parseImpl(value);
+        }
+
+        CSV_REQUIRES(T, std::wstring)
+        basic_csv(const std::string &value, char separator = ';') : rows(), separator(separator) {
+            this->parseImpl(util::string_to_wstring(value));
         }
 
         basic_csv(const char *value, char separator = ';') : rows(), separator(separator) {
-            for (const T &row : util::splitString<std::string>(value, '\n')) {
-                rows.push_back(csvrow<T>::parse(row, separator));
+            if constexpr (util::is_u8_string_v<T>) {
+                this->parseImpl(T(value));
+            } else if constexpr (util::is_u16_string_v<T>) {
+                this->parseImpl(util::string_to_wstring(value));
             }
         }
 
+        CSV_REQUIRES(T, std::wstring)
         basic_csv(const wchar_t *value, char separator = ';') : rows(), separator(separator) {
-            for (const T &row : util::splitString<std::wstring>(value, L'\n')) {
-                rows.push_back(csvrow<T>::parse(row, separator));
-            }
+            this->parseImpl(T(value));
         }
 
         basic_csv(const std::vector<csvrow<T>> &data, char separator = ';') : rows(data), separator(separator) {}
@@ -873,10 +916,26 @@ namespace markusjx {
         }
 
         CSV_NODISCARD T to_string() const {
-            if constexpr (std::is_same_v<T, std::string>) {
+            if constexpr (util::is_u8_string_v<T>) {
                 return to_string_impl<std::stringstream>();
-            } else if constexpr (std::is_same_v<T, std::wstring>) {
+            } else if constexpr (util::is_u16_string_v<T>) {
                 return to_string_impl<std::wstringstream>();
+            }
+        }
+
+        CSV_NODISCARD std::string to_u8string() const {
+            if constexpr (util::is_u8_string_v<T>) {
+                return this->to_string();
+            } else if constexpr (util::is_u16_string_v<T>) {
+                return util::wstring_to_string(this->to_string());
+            }
+        }
+
+        CSV_NODISCARD std::wstring to_u16string() const {
+            if constexpr (util::is_u8_string_v<T>) {
+                return util::string_to_wstring(this->to_string());
+            } else if constexpr (util::is_u16_string_v<T>) {
+                return this->to_string();
             }
         }
 
@@ -917,48 +976,44 @@ namespace markusjx {
             return size;
         }
 
-        template<class U>
-        friend std::ostream &operator<<(std::ostream &ostream, const basic_csv<U> &csv) {
-            if constexpr (std::is_same_v<T, std::string>) {
+        friend std::ostream &operator<<(std::ostream &ostream, const basic_csv<T> &csv) {
+            if constexpr (util::is_u8_string_v<T>) {
                 ostream << csv.to_string();
-            } else if constexpr (std::is_same_v<T, std::wstring>) {
+            } else if constexpr (util::is_u16_string_v<T>) {
                 ostream << util::wstring_to_string(csv.to_string());
             }
 
             return ostream;
         }
 
-        template<class U>
-        friend std::wostream &operator<<(std::wostream &ostream, const basic_csv<U> &csv) {
-            if constexpr (std::is_same_v<T, std::wstring>) {
+        friend std::wostream &operator<<(std::wostream &ostream, const basic_csv<T> &csv) {
+            if constexpr (util::is_u16_string_v<T>) {
                 ostream << csv.to_string();
-            } else if constexpr (std::is_same_v<T, std::string>) {
+            } else if constexpr (util::is_u8_string_v<T>) {
                 ostream << util::string_to_wstring(csv.to_string());
             }
 
             return ostream;
         }
 
-        template<class U>
-        friend std::istream &operator>>(std::istream &istream, basic_csv<U> &csv) {
+        friend std::istream &operator>>(std::istream &istream, basic_csv<T> &csv) {
             std::string res(std::istreambuf_iterator<char>(istream), {});
 
-            if constexpr (std::is_same_v<U, std::string>) {
+            if constexpr (util::is_u8_string_v<T>) {
                 csv << basic_csv::parse(res, csv.separator);
-            } else if constexpr (std::is_same_v<U, std::wstring>) {
+            } else if constexpr (util::is_u16_string_v<T>) {
                 csv << basic_csv::parse(util::string_to_wstring(res), csv.separator);
             }
 
             return istream;
         }
 
-        template<class U>
-        friend std::wistream &operator>>(std::wistream &istream, basic_csv<U> &csv) {
+        friend std::wistream &operator>>(std::wistream &istream, basic_csv<T> &csv) {
             std::wstring res(std::istreambuf_iterator<wchar_t>(istream), {});
 
-            if constexpr (std::is_same_v<U, std::string>) {
+            if constexpr (util::is_u8_string_v<T>) {
                 csv << basic_csv::parse(util::wstring_to_string(res), csv.separator);
-            } else if constexpr (std::is_same_v<U, std::wstring>) {
+            } else if constexpr (util::is_u16_string_v<T>) {
                 csv << basic_csv::parse(res, csv.separator);
             }
 
@@ -990,11 +1045,26 @@ namespace markusjx {
             return ss.str();
         }
 
+        void parseImpl(const T &value) {
+            // Split the string by newlines and
+            // push the lines into the row vector
+            for (const T &row : util::splitString(value, '\n')) {
+                rows.push_back(csvrow<T>::parse(row, separator));
+            }
+
+            // If value ends with a new line, insert a
+            // new line into this objects row array
+            if (value[value.size() - 1] == '\n') {
+                rows.emplace_back(nullptr);
+            }
+        }
+
         std::vector<csvrow<T>> rows;
         char separator;
     };
 
     using csv = basic_csv<std::string>;
+    using w_csv = basic_csv<std::wstring>;
 }
 
 #undef CSV_NODISCARD

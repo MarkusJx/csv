@@ -139,7 +139,7 @@ TEST_F(CSVTest, floatTest) {
 }
 
 TEST_F(CSVTest, stringTest) {
-    csv_test<std::string>(5, [] { return getRandomString(40);});
+    csv_test<std::string>(5, [] { return getRandomString(40); });
 }
 
 TEST_F(CSVTest, boolTest) {
@@ -174,7 +174,7 @@ TEST_F(ConstructorTest, fromInitializerListTest) {
 
 TEST_F(ConstructorTest, appendTest) {
     markusjx::csv csv1 = {{"abc", 1,  5,    'd',   false},
-                         {25,    42, true, "def", nullptr, "ye"}};
+                          {25,    42, true, "def", nullptr, "ye"}};
     markusjx::csv csv2 = {{"abc", 1,  5,    'd',   false},
                           {25,    42, true, "def", nullptr, "ye"}};
 
@@ -183,13 +183,31 @@ TEST_F(ConstructorTest, appendTest) {
     EXPECT_EQ(csv1.numElements(), 22);
 }
 
+TEST_F(ConstructorTest, parseTest) {
+    std::string test_string = "1;2;3;\"abc\";";
+    markusjx::csv csv1 = markusjx::csv::parse(test_string);
+    markusjx::csv csv2 = {1, 2, 3, "abc"};
+
+    EXPECT_EQ(csv1, csv2);
+    EXPECT_EQ(csv1.to_string(), test_string);
+    EXPECT_EQ(csv2.to_string(), test_string);
+
+    csv1.clear();
+    for (int i = 0; i < 1; i++) {
+        csv1 << getRandomInt() << getRandomString(10) << getRandomDouble() << getRandomBool() << markusjx::csv::endl;
+    }
+
+    csv2 = csv1.to_string();
+    EXPECT_EQ(csv1, csv2);
+}
+
 class EqualityTest : public CSVTestBase {
 };
 
 TEST_F(EqualityTest, equalsTest) {
     markusjx::csv csv_1;
     markusjx::csv csv_2;
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < numValues; i++) {
         int x = getRandomInt();
         double y = getRandomDouble();
         std::string z = getRandomString(40);
@@ -237,6 +255,14 @@ TEST_F(EqualityTest, spaceshipTest) {
             EXPECT_LE(csv[0][0], n2);
         }
     }
+}
+
+TEST_F(EqualityTest, stringConversionTest) {
+    markusjx::csv c1 = {1, true, nullptr, 'a', "abc"};
+    markusjx::w_csv c2 = {1, true, nullptr, L'a', L"abc"};
+
+    EXPECT_EQ(c1.to_u8string(), c2.to_u8string());
+    EXPECT_EQ(c1.to_u16string(), c2.to_u16string());
 }
 
 class NumberTest : public CSVTestBase {
@@ -431,6 +457,232 @@ TEST_F(FileTest, readTest) {
     ifs >> c;
 
     EXPECT_EQ(c, csv);
+}
+
+class U16Test : public CSVTestBase {
+};
+
+TEST_F(U16Test, creationTest) {
+    markusjx::w_csv csv;
+
+    csv = {1, 'a', "abc"};
+    EXPECT_EQ(csv.to_string(), L"1;\"a\";\"abc\";");
+    EXPECT_EQ(csv.to_u8string(), "1;\"a\";\"abc\";");
+}
+
+TEST_F(U16Test, appendTest) {
+    markusjx::w_csv c1;
+    markusjx::csv c2;
+    for (int i = 0; i < numValues; i++) {
+        const int n = getRandomInt();
+        const std::string s = getRandomString(20);
+        const bool b = getRandomBool();
+        const double d = getRandomDouble();
+        c1 << n << s << b << d << nullptr;
+        c2 << n << s << b << d << nullptr;
+    }
+
+    EXPECT_EQ(c1.to_u8string(), c2.to_u8string());
+    EXPECT_EQ(c2.to_u16string(), c2.to_u16string());
+}
+
+TEST_F(U16Test, conversionTest) {
+    markusjx::w_csv csv;
+    for (int i = 0; i < numValues; i++) {
+        const int cur = getRandomInt();
+        csv[0][i] = cur;
+
+        EXPECT_EQ(csv[0][i], cur);
+    }
+
+    for (int i = 0; i < numValues; i++) {
+        const long double cur = getRandomDouble();
+        csv[1][i] = cur;
+
+        if (csv[1][i] != cur) {
+            ASSERT_EQ(std::to_string(csv[1][i].as<long double>()), std::to_string(cur));
+        } else {
+            EXPECT_EQ(csv[1][i], cur);
+        }
+    }
+
+    for (int i = 0; i < numValues; i++) {
+        const std::wstring cur = markusjx::util::string_to_wstring(getRandomString(20));
+        csv[2][i] = cur;
+
+        EXPECT_EQ(csv[2][i], cur);
+    }
+
+    for (int i = 0; i < numValues; i++) {
+        const bool cur = getRandomBool();
+        csv[3][i] = cur;
+
+        EXPECT_EQ(csv[3][i], cur);
+    }
+}
+
+class ExceptionTest : public CSVTestBase {
+};
+
+TEST_F(ExceptionTest, intTest) {
+    markusjx::csv csv;
+    for (int i = 0; i < numValues; i++) {
+        const int n = getRandomInt();
+        csv[0][i] = n;
+
+        EXPECT_EQ(csv[0][i], n);
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<std::string>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<bool>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<char>());
+    }
+}
+
+TEST_F(ExceptionTest, longTest) {
+    markusjx::csv csv;
+    for (int i = 0; i < numValues; i++) {
+        const long n = getRandomInt();
+        csv[0][i] = n;
+
+        EXPECT_EQ(csv[0][i], n);
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<std::string>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<bool>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<char>());
+    }
+}
+
+TEST_F(ExceptionTest, u_longTest) {
+    markusjx::csv csv;
+    for (int i = 0; i < numValues; i++) {
+        const unsigned long n = getRandomInt();
+        csv[0][i] = n;
+
+        EXPECT_EQ(csv[0][i], n);
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<std::string>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<bool>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<char>());
+    }
+}
+
+TEST_F(ExceptionTest, longlongTest) {
+    markusjx::csv csv;
+    for (int i = 0; i < numValues; i++) {
+        const long long n = getRandomInt();
+        csv[0][i] = n;
+
+        EXPECT_EQ(csv[0][i], n);
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<std::string>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<bool>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<char>());
+    }
+}
+
+TEST_F(ExceptionTest, u_longlongTest) {
+    markusjx::csv csv;
+    for (int i = 0; i < numValues; i++) {
+        const unsigned long long n = getRandomInt();
+        csv[0][i] = n;
+
+        EXPECT_EQ(csv[0][i], n);
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<std::string>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<bool>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<char>());
+    }
+}
+
+TEST_F(ExceptionTest, doubleTest) {
+    markusjx::csv csv;
+    for (int i = 0; i < numValues; i++) {
+        const double n = getRandomDouble();
+        csv[0][i] = n;
+
+        if (csv[0][i] != n) {
+            EXPECT_EQ(csv[0][i].rawValue(), std::to_string(n));
+        } else {
+            EXPECT_EQ(csv[0][i], n);
+        }
+
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<std::string>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<bool>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<char>());
+    }
+}
+
+TEST_F(ExceptionTest, longdoubleTest) {
+    markusjx::csv csv;
+    for (int i = 0; i < numValues; i++) {
+        const long double n = getRandomDouble();
+        csv[0][i] = n;
+
+        if (csv[0][i] != n) {
+            EXPECT_EQ(csv[0][i].rawValue(), std::to_string(n));
+        } else {
+            EXPECT_EQ(csv[0][i], n);
+        }
+
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<std::string>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<bool>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<char>());
+    }
+}
+
+TEST_F(ExceptionTest, floatTest) {
+    markusjx::csv csv;
+    for (int i = 0; i < numValues; i++) {
+        const auto n = static_cast<float>(getRandomDouble());
+        csv[0][i] = n;
+
+        if (csv[0][i] != n) {
+            EXPECT_EQ(csv[0][i].rawValue(), std::to_string(n));
+        } else {
+            EXPECT_EQ(csv[0][i], n);
+        }
+
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<std::string>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<bool>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<char>());
+    }
+}
+
+TEST_F(ExceptionTest, boolTest) {
+    markusjx::csv csv;
+    for (int i = 0; i < numValues; i++) {
+        const bool n = getRandomBool();
+        csv[0][i] = n;
+
+        EXPECT_EQ(csv[0][i], n);
+
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<std::string>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<int>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<long>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<unsigned long>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<long long>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<unsigned long long>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<double>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<long double>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<float>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<char>());
+    }
+}
+
+TEST_F(ExceptionTest, stringTest) {
+    markusjx::csv csv;
+    for (int i = 0; i < numValues; i++) {
+        const std::string n = getRandomString(25);
+        csv[0][i] = n;
+
+        EXPECT_EQ(csv[0][i], n);
+
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<int>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<long>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<unsigned long>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<long long>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<unsigned long long>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<double>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<long double>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<float>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<bool>());
+        EXPECT_ANY_THROW(std::cerr << csv[0][i].as<char>());
+    }
 }
 
 int main(int argc, char **argv) {
