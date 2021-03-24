@@ -51,6 +51,17 @@
 #   endif
 #endif
 
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32) && !defined(__CYGWIN__)
+#   define CSV_WINDOWS
+#   undef CSV_UNIX
+#pragma message("Building on windows")
+#elif defined(__LINUX__) || defined(__APPLE__) || defined (__CYGWIN__) || defined(__linux__) || defined(__FreeBSD__) || \
+        defined(unix) || defined(__unix) || defined(__unix__)
+#   define CSV_UNIX
+#   undef CSV_WINDOWS
+#pragma message("Building on unix")
+#endif
+
 #ifndef CSV_NODISCARD
 #   define CSV_NODISCARD
 #endif
@@ -113,12 +124,20 @@ namespace markusjx {
 
         inline std::string wstring_to_string(const std::wstring &in) {
             std::string out(in.size() + 1, ' ');
+
+#ifdef CSV_WINDOWS
             size_t outSize;
 
-            int err = wcstombs_s(&outSize, out.data(), out.size(), in.c_str(), in.size());
+            errno_t err = wcstombs_s(&outSize, out.data(), out.size(), in.c_str(), in.size());
             if (err) {
-                throw std::runtime_error("Could not create the string");
+                throw std::runtime_error("Could not convert the string");
             }
+#elif defined(CSV_UNIX)
+            size_t written = wcstombs(out.data(), in.c_str(), in.size());
+            if (written == static_cast<size_t>(-1)) {
+                throw std::runtime_error("Could not convert the string");
+            }
+#endif // WINODWS OR UNIX
 
             out.resize(in.size());
             return out;
@@ -127,11 +146,18 @@ namespace markusjx {
         inline std::wstring string_to_wstring(const std::string &in) {
             std::wstring out(in.size() + 1, L' ');
 
+#ifdef CSV_WINDOWS
             size_t outSize;
-            int err = mbstowcs_s(&outSize, (wchar_t *) out.data(), out.size(), in.c_str(), in.size());
+            errno_t err = mbstowcs_s(&outSize, (wchar_t *) out.data(), out.size(), in.c_str(), in.size());
             if (err) {
                 throw std::runtime_error("Could not create the string");
             }
+#elif defined(CSV_UNIX)
+            size_t written = mbstowcs(out.data(), in.c_str(), in.size());
+            if (written == static_cast<size_t>(-1)) {
+                throw std::runtime_error("Could not convert the string");
+            }
+#endif // WINDOWS OR UNIX
 
             out.resize(in.size());
             return out;
@@ -1069,5 +1095,8 @@ namespace markusjx {
 
 #undef CSV_NODISCARD
 #undef CSV_CHECK_T_SUPPORTED
+#undef CSV_WINDOWS
+#undef CSV_UNIX
+#undef CSV_REQUIRES
 
 #endif //MARKUSJX_CSV_HPP
