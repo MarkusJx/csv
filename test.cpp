@@ -685,6 +685,33 @@ TEST_F(ExceptionTest, stringTest) {
     }
 }
 
+class CSVFileTest : public CSVTestBase {
+};
+
+TEST_F(CSVFileTest, writeReadTest) {
+    std::remove("test.csv");
+    markusjx::csv_file file("test.csv", 100);
+    markusjx::csv csv;
+
+    for (int i = 0; i < 1000; i++) {
+        const int n = getRandomInt();
+        const std::string s = getRandomString(20);
+        const bool b = getRandomBool();
+        const double d = getRandomDouble();
+
+        file << n << s << b << d << nullptr;
+        csv << n << s << b << d << nullptr;
+
+        // The file writer had issues with new lines, check that too
+        for (int j = 0; j < getRandomInt() % 4; j++) {
+            file << markusjx::csv::endl;
+            csv << markusjx::csv::endl;
+        }
+    }
+
+    EXPECT_EQ(file.to_basic_csv(), csv);
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

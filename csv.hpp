@@ -160,6 +160,20 @@ namespace markusjx {
             out.resize(in.size());
             return out;
         }
+
+        template<class T, class U>
+        inline T string_as(const U &str) {
+            static_assert(is_u8_string_v<T> || is_u16_string_v<T>);
+            static_assert(is_u8_string_v<U> || is_u16_string_v<U>);
+
+            if constexpr ((is_u8_string_v<T> && is_u8_string_v<U>) || (is_u16_string_v<T> && is_u16_string_v<U>)) {
+                return str;
+            } else if constexpr (is_u8_string_v<T> && is_u16_string_v<U>) {
+                return wstring_to_string(str);
+            } else if constexpr (is_u16_string_v<T> && is_u8_string_v<U>) {
+                return string_to_wstring(str);
+            }
+        }
     }
 
     template<class T>
@@ -619,12 +633,16 @@ namespace markusjx {
 
         static csvrow<T> parse(const T &value, const char separator) {
             csvrow row(nullptr);
-            for (const T &col : util::splitString(value, separator)) {
-                row << csvrowcolumn<T>::parse(col);
+            if (!value.empty()) {
+                for (const T &col : util::splitString(value, separator)) {
+                    row << csvrowcolumn<T>::parse(col);
+                }
             }
 
             return row;
         }
+
+        csvrow() : columns() {}
 
         explicit csvrow(std::nullptr_t) : columns() {}
 
@@ -758,9 +776,30 @@ namespace markusjx {
             columns.clear();
         }
 
+        CSV_NODISCARD T to_string(char separator = ';') const {
+            if constexpr (util::is_u8_string_v<T>) {
+                return to_string_impl<std::stringstream>(separator);
+            } else if constexpr (util::is_u16_string_v<T>) {
+                return to_string_impl<std::wstringstream>(separator);
+            }
+        }
+
     private:
+        template<class U>
+        CSV_NODISCARD T to_string_impl(char separator) const {
+            U ss;
+            for (const csvrowcolumn<T> &col : columns) {
+                ss << col.rawValue() << separator;
+            }
+
+            return ss.str();
+        }
+
         std::vector<csvrowcolumn<T>> columns;
     };
+
+    template<class T>
+    class basic_csv_file;
 
     template<class T>
     class basic_csv {
@@ -777,6 +816,12 @@ namespace markusjx {
         static basic_csv<T> &endl(basic_csv<T> &c) {
             c.rows.emplace_back(nullptr);
             return c;
+        }
+
+        template<class U, class = typename std::enable_if<util::is_any_of_v<U, char, wchar_t>, int>>
+        static basic_csv_file<U> &endl(basic_csv_file<U> &f) {
+            f.endline();
+            return f;
         }
 
         explicit basic_csv(char separator = ';') : rows(), separator(separator) {}
@@ -1078,8 +1123,10 @@ namespace markusjx {
 
             // If value ends with a new line, insert a
             // new line into this objects row array
-            if (value[value.size() - 1] == '\n') {
-                rows.emplace_back(nullptr);
+            if (!value.empty()) {
+                if (value[value.size() - 1] == '\n') {
+                    rows.emplace_back(nullptr);
+                }
             }
         }
 
@@ -1087,8 +1134,226 @@ namespace markusjx {
         char separator;
     };
 
+    template<class T>
+    class basic_csv_file {
+    private:
+        using string_t = std::basic_string<T, std::char_traits<T>, std::allocator<T>>;
+        using stream_t = std::basic_fstream<T, std::char_traits<T>>;
+    public:
+        static_assert(util::is_any_of_v<T, char, wchar_t>);
+
+        explicit basic_csv_file(const string_t &path, size_t maxCached = 100, char separator = ';') : separator(
+                separator), path(path), cache(), maxCached(maxCached) {
+            currentLine = getNumLines();
+        }
+
+        basic_csv_file &operator<<(const char *val) {
+            csvrow<string_t> row = getCurrentLine();
+
+            row << csvrowcolumn<string_t>(val);
+            writeToFile(row.to_string(separator), currentLine);
+
+            return *this;
+        }
+
+        CSV_REQUIRES(T, std::wstring)
+        basic_csv_file &operator<<(const wchar_t *val) {
+            csvrow<string_t> row = getCurrentLine();
+
+            row << csvrowcolumn<string_t>(val);
+            writeToFile(row.to_string(separator), currentLine);
+
+            return *this;
+        }
+
+        template<class U>
+        basic_csv_file &operator<<(const U &val) {
+            csvrow<string_t> row = getCurrentLine();
+
+            row << csvrowcolumn<string_t>(val);
+            writeToFile(row.to_string(separator), currentLine);
+
+            return *this;
+        }
+
+        basic_csv_file &operator<<(const basic_csv<string_t> &el) {
+            const csvrow<string_t> line = getCurrentLine();
+
+            basic_csv<string_t> csv;
+            csv << line << el;
+
+            writeCacheToFile();
+            writeDataToFile({currentLine, csv.to_string()});
+
+            return *this;
+        }
+
+        basic_csv_file<T> &operator<<(basic_csv_file<T> &(*val)(basic_csv_file<T> &)) {
+            return val(*this);
+        }
+
+        friend basic_csv<string_t> &operator>>(basic_csv_file<T> &file, basic_csv<string_t> &csv) {
+            file.writeCacheToFile();
+
+            stream_t in = file.getStream(std::ios::in);
+            in >> csv;
+            in.close();
+
+            return csv;
+        }
+
+        basic_csv<string_t> to_basic_csv() {
+            basic_csv<string_t> csv;
+            *this >> csv;
+
+            return csv;
+        }
+
+        basic_csv_file<T> &endline() {
+            // Insert a new line if the current line does not exist (Fix for \n\n...)
+            if (cache.find(currentLine) == cache.end() && currentLine > getNumLines()) {
+                cache.insert(std::pair<int64_t, string_t>(currentLine, string_t()));
+            }
+
+            // Increase currentLine
+            currentLine++;
+            return *this;
+        }
+
+        void flush() {
+            // If the cache isn't empty, write it to the file
+            if (!cache.empty()) {
+                writeCacheToFile();
+            }
+        }
+
+        ~basic_csv_file() {
+            flush();
+        }
+
+        static basic_csv_file<T> &endl(basic_csv_file<T> &c) {
+            c.endline();
+            return c;
+        }
+
+    private:
+        void writeToFile(const string_t &row, int64_t line) {
+            cache.insert_or_assign(line, row);
+
+            if (cache.size() >= maxCached) {
+                writeCacheToFile();
+            }
+        }
+
+        CSV_NODISCARD csvrow<string_t> getCurrentLine() const {
+            if (cache.find(currentLine) == cache.end()) {
+                stream_t in = getStream(std::ios::in);
+                gotoLine(in, currentLine);
+
+                string_t line;
+                std::getline(in, line);
+                in.close();
+
+                if (line.empty()) {
+                    return csvrow<string_t>(nullptr);
+                } else {
+                    return csvrow<string_t>::parse(line, separator);
+                }
+            } else {
+                return csvrow<string_t>::parse(cache.at(currentLine), separator);
+            }
+        }
+
+        stream_t getStream(std::ios_base::openmode openMode) const {
+            return stream_t(path, openMode);
+        }
+
+        int64_t getNumLines() {
+            stream_t in = getStream(std::ios::in);
+            return std::count(std::istreambuf_iterator<T>(in), std::istreambuf_iterator<T>(), '\n');
+        }
+
+        template<class U = string_t>
+        U getTmpFile() const {
+            string_t out = path;
+            if constexpr (util::is_u8_string_v<string_t>) {
+                out += ".tmp";
+            } else if constexpr (util::is_u16_string_v<string_t>) {
+                out += L".tmp";
+            }
+
+            return util::string_as<U>(out);
+        }
+
+        void writeCacheToFile() {
+            writeDataToFile(cache);
+            cache.clear();
+        }
+
+        void writeDataToFile(std::map<int64_t, string_t> &values) {
+            std::remove(getTmpFile<std::string>().c_str());
+            stream_t out(getTmpFile(), std::ios::out | std::ios::app);
+            stream_t in = getStream(std::ios::in);
+
+            int64_t i = 0;
+            string_t current;
+            in.seekg(std::ios::beg);
+            while (std::getline(in, current)) {
+                if (i > 0) {
+                    out << std::endl;
+                }
+
+                auto it = values.find(i++);
+                if (it == values.end()) {
+                    out << current;
+                } else {
+                    out << it->second;
+                    values.erase(it);
+                }
+            }
+
+            in.close();
+
+            // Write all values that were not already written to the file into the file
+            if (!values.empty()) {
+                for (const std::pair<int64_t, string_t> &p : values) {
+                    if (i++ > 0) {
+                        out << std::endl;
+                    }
+
+                    out << p.second;
+                }
+            }
+
+            if (i <= currentLine) {
+                out << std::endl;
+            }
+
+            out.flush();
+            out.close();
+
+            std::remove(path.c_str());
+            std::rename(getTmpFile<std::string>().c_str(), path.c_str());
+        }
+
+        static void gotoLine(stream_t &stream, int64_t num) {
+            stream.seekg(std::ios::beg);
+            for (size_t i = 0; i < num; i++) {
+                stream.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            }
+        }
+
+        size_t maxCached;
+        std::map<int64_t, string_t> cache;
+        char separator;
+        string_t path;
+        int64_t currentLine;
+    };
+
     using csv = basic_csv<std::string>;
     using w_csv = basic_csv<std::wstring>;
+
+    using csv_file = basic_csv_file<char>;
 }
 
 #undef CSV_NODISCARD
