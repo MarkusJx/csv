@@ -31,6 +31,7 @@
 #include <sstream>
 #include <string>
 #include <regex>
+#include <map>
 
 #if defined(_MSVC_LANG) || defined(__cplusplus)
 #   if (defined(_MSVC_LANG) && _MSVC_LANG > 201703L) || __cplusplus > 201703L // C++20
@@ -38,8 +39,11 @@
 #   endif
 #   if (defined(_MSVC_LANG) && _MSVC_LANG > 201402L) || __cplusplus > 201402L // C++17
 #       ifndef CSV_REQUIRES
-#           define CSV_REQUIRES(type, ...) template<class U = type, typename = std::enable_if_t<::markusjx::util::is_any_of_v<U, __VA_ARGS__>, int>>
+//          Use SFINAE to disable functions
+#           define CSV_REQUIRES(type, ...) template<class _SFINAE_PARAM_ = type, class = typename std::enable_if_t<::markusjx::util::is_any_of_v<_SFINAE_PARAM_, __VA_ARGS__>, int>>
 #       endif //CSV_REQUIRES
+//      This looks awful, but it works
+#       define CSV_ENABLE_IF(...) class = typename std::enable_if_t<__VA_ARGS__, int>
 #       if defined(__APPLE__) && defined(__clang__)
 #           define CSV_NODISCARD __attribute__ ((warn_unused_result))
 #           warning Compiling on apple with clang may lead to issues. Consider compiling using gcc
@@ -68,20 +72,49 @@
 #   define CSV_REQUIRES(type, ...)
 #endif //CSV_REQUIRES
 
+// Check if <T> is supported
 #define CSV_CHECK_T_SUPPORTED static_assert(::markusjx::util::is_u8_string_v<T> || ::markusjx::util::is_u16_string_v<T>,\
                                             "T must be one of: [std::string, std::wstring]");
 
 namespace markusjx {
+    /**
+     * A utility namespace
+     */
     namespace util {
+        /**
+         * Check if T is any of Types
+         *
+         * @tparam T the type to check
+         * @tparam Types the types to check against
+         */
         template<class T, class... Types>
         inline constexpr bool is_any_of_v = std::disjunction_v<std::is_same<T, Types>...>;
 
+        /**
+         * Check if T is a utf-8 string
+         *
+         * @tparam T the type to check
+         */
         template<class T>
         inline constexpr bool is_u8_string_v = is_any_of_v<T, std::string>;
 
+        /**
+         * Check if T is a utf-16 string
+         *
+         * @tparam T the type to check
+         */
         template<class T>
         inline constexpr bool is_u16_string_v = is_any_of_v<T, std::wstring>;
 
+        /**
+         * Split a string.
+         * Source: https://stackoverflow.com/a/37454181
+         *
+         * @tparam T the string type
+         * @param str the string to split
+         * @param delimiter the delimiter
+         * @return the string elements
+         */
         template<class T>
         inline std::vector<T> splitString(const T &str, char delimiter) {
             std::vector<T> tokens;
@@ -96,6 +129,15 @@ namespace markusjx {
             return tokens;
         }
 
+        /**
+         * Convert a string to a number. Alternative version
+         *
+         * @tparam T the number type
+         * @tparam S the string type
+         * @param str the string to convert
+         * @param conversionFunc the conversion function
+         * @return the converted number
+         */
         template<class T, class S>
         inline T stringToNumberAlt(const S &str, T(*conversionFunc)(const S &, size_t *)) {
             size_t idx = 0;
@@ -108,6 +150,15 @@ namespace markusjx {
             }
         }
 
+        /**
+         * Convert a string to a number
+         *
+         * @tparam T the number type
+         * @tparam S the string type
+         * @param str the string to convert
+         * @param conversionFunc the conversion function
+         * @return the converted number
+         */
         template<class T, class S>
         inline T stringToNumber(const S &str, T(*conversionFunc)(const S &, size_t *, int)) {
             size_t idx = 0;
@@ -120,7 +171,14 @@ namespace markusjx {
             }
         }
 
+        /**
+         * Convert a std::wstring to a std::string
+         *
+         * @param in the wide string to convert
+         * @return the converted string
+         */
         inline std::string wstring_to_string(const std::wstring &in) {
+            // Create the result string
             std::string out(in.size() + 1, ' ');
 
 #ifdef CSV_WINDOWS
@@ -141,6 +199,12 @@ namespace markusjx {
             return out;
         }
 
+        /**
+         * Convert a std::string to a std::wstring
+         *
+         * @param in the string to convert
+         * @return the converted wide string
+         */
         inline std::wstring string_to_wstring(const std::string &in) {
             std::wstring out(in.size() + 1, L' ');
 
@@ -161,7 +225,16 @@ namespace markusjx {
             return out;
         }
 
-        template<class T, class U>
+        /**
+         * Get a string as another string type
+         *
+         * @tparam T the string type to convert to
+         * @tparam U the type of the string to convert
+         * @param str the string to convert
+         * @return the converted string
+         */
+        template<class T, class U, CSV_ENABLE_IF(
+                (is_u8_string_v<T> || is_u16_string_v<T>) && (is_u8_string_v<U> || is_u16_string_v<U>)) >
         inline T string_as(const U &str) {
             static_assert(is_u8_string_v<T> || is_u16_string_v<T>);
             static_assert(is_u8_string_v<U> || is_u16_string_v<U>);
@@ -176,11 +249,22 @@ namespace markusjx {
         }
     }
 
+    /**
+     * A csv column
+     *
+     * @tparam T the string type. Must be a std::string or std::wstring
+     */
     template<class T>
     class csvrowcolumn {
     public:
         CSV_CHECK_T_SUPPORTED
 
+        /**
+         * Parse a column value
+         *
+         * @param value the string value to parse
+         * @return the parsed column
+         */
         static csvrowcolumn<T> parse(const T &value) {
             csvrowcolumn<T> col(nullptr);
             col.value = value;
@@ -188,19 +272,42 @@ namespace markusjx {
             return col;
         }
 
+        /**
+         * Create an empty column
+         */
         csvrowcolumn(std::nullptr_t) : value() {}
 
+        /**
+         * Create a column from a string value
+         *
+         * @param val the value
+         */
         csvrowcolumn(const T &val) : value('"' + val + '"') {}
 
+        /**
+         * Create a column from a string value. Only available if T = std::wstring
+         *
+         * @param val the string to convert
+         */
         CSV_REQUIRES(T, std::wstring)
         csvrowcolumn(const std::string &val) : value(L'"' + util::string_to_wstring(val) + L'"') {}
 
+        /**
+         * Create a column from a character
+         *
+         * @param val the character to use
+         */
         csvrowcolumn(char val) : value() {
             value += '"';
             value += val;
             value += '"';
         }
 
+        /**
+         * Create a column from a char array
+         *
+         * @param val the char array
+         */
         csvrowcolumn(const char *val) {
             if constexpr (util::is_u8_string_v<T>) {
                 value = '"' + T(val) + '"';
@@ -209,6 +316,11 @@ namespace markusjx {
             }
         }
 
+        /**
+         * Create a column from a wide character
+         *
+         * @param val the char to use
+         */
         CSV_REQUIRES(T, std::wstring)
         csvrowcolumn(wchar_t val) : value() {
             value += L'"';
@@ -216,9 +328,19 @@ namespace markusjx {
             value += L'"';
         }
 
+        /**
+         * Create a column from a wide char array
+         *
+         * @param val the char array
+         */
         CSV_REQUIRES(T, std::wstring)
         csvrowcolumn(const wchar_t *val) : value(L'"' + T(val) + L'"') {}
 
+        /**
+         * Create a column from a boolean
+         *
+         * @param val the bool
+         */
         csvrowcolumn(bool val) {
             if constexpr (util::is_u8_string_v<T>) {
                 value = T(val ? "true" : "false");
@@ -227,6 +349,12 @@ namespace markusjx {
             }
         }
 
+        /**
+         * Create a column from a string convertible value
+         *
+         * @tparam U the type of the value
+         * @param val the value
+         */
         template<class U>
         csvrowcolumn(const U &val) {
             if constexpr (util::is_u8_string_v<T>) {
@@ -236,9 +364,14 @@ namespace markusjx {
             }
         }
 
-        csvrowcolumn<T> &operator=(const csvrowcolumn<T> &) = default;
+        csvrowcolumn &operator=(const csvrowcolumn<T> &) = default;
 
-        csvrowcolumn<T> &operator=(std::nullptr_t) {
+        /**
+         * Assign nothing to this column
+         *
+         * @return this
+         */
+        csvrowcolumn &operator=(std::nullptr_t) {
             if constexpr (util::is_u8_string_v<T>) {
                 value = "";
             } else if constexpr (util::is_u8_string_v<T>) {
@@ -248,7 +381,7 @@ namespace markusjx {
             return *this;
         }
 
-        csvrowcolumn<T> &operator=(const T &val) {
+        csvrowcolumn &operator=(const T &val) {
             value = T();
             value += '"';
             value += val;
@@ -256,7 +389,7 @@ namespace markusjx {
             return *this;
         }
 
-        csvrowcolumn<T> &operator=(const char *val) {
+        csvrowcolumn &operator=(const char *val) {
             if constexpr (util::is_u8_string_v<T>) {
                 value = '"' + T(val) + '"';
             } else if constexpr (util::is_u16_string_v<T>) {
@@ -266,12 +399,12 @@ namespace markusjx {
         }
 
         CSV_REQUIRES(T, std::wstring)
-        csvrowcolumn<T> &operator=(const wchar_t *val) {
+        csvrowcolumn &operator=(const wchar_t *val) {
             value = L'"' + T(val) + L'"';
             return *this;
         }
 
-        csvrowcolumn<T> &operator=(bool val) {
+        csvrowcolumn &operator=(bool val) {
             if constexpr (util::is_u8_string_v<T>) {
                 value = std::string(val ? "true" : "false");
             } else if constexpr (util::is_u16_string_v<T>) {
@@ -281,7 +414,7 @@ namespace markusjx {
             return *this;
         }
 
-        csvrowcolumn<T> &operator=(char val) {
+        csvrowcolumn &operator=(char val) {
             value = T();
             value += '"';
             value += val;
@@ -290,7 +423,7 @@ namespace markusjx {
         }
 
         CSV_REQUIRES(T, std::wstring)
-        csvrowcolumn<T> &operator=(wchar_t val) {
+        csvrowcolumn &operator=(wchar_t val) {
             value = T();
             value += L'"';
             value += val;
@@ -494,7 +627,7 @@ namespace markusjx {
             return this->as<U>() >= val;
         }
 
-        const csvrowcolumn<T> operator++(int) {
+        csvrowcolumn<T> operator++(int) {
             if (isDecimal()) {
                 this->operator=(this->as<long long>() + 1);
             } else {
@@ -503,7 +636,7 @@ namespace markusjx {
             return *this;
         }
 
-        const csvrowcolumn<T> operator--(int) {
+        csvrowcolumn<T> operator--(int) {
             if (isDecimal()) {
                 this->operator=(this->as<long long>() - 1);
             } else {
@@ -627,102 +760,42 @@ namespace markusjx {
     };
 
     template<class T>
-    class csvrow {
+    class const_csvrow {
     public:
         CSV_CHECK_T_SUPPORTED
 
-        static csvrow<T> parse(const T &value, const char separator) {
-            csvrow row(nullptr);
-            if (!value.empty()) {
-                for (const T &col : util::splitString(value, separator)) {
-                    row << csvrowcolumn<T>::parse(col);
-                }
-            }
+        const_csvrow() : columns() {}
 
-            return row;
-        }
+        explicit const_csvrow(std::nullptr_t) : columns() {}
 
-        csvrow() : columns() {}
-
-        explicit csvrow(std::nullptr_t) : columns() {}
-
-        csvrow(const std::vector<csvrowcolumn<T>> &data) : columns(data) {}
+        const_csvrow(const std::vector<csvrowcolumn<T>> &data) : columns(data) {}
 
         template<class U>
-        csvrow(const std::vector<U> &data) : columns(data.size()) {
+        const_csvrow(const std::vector<U> &data) : columns(data.size()) {
             for (size_t i = 0; i < data.size(); i++) {
                 columns[i] = csvrowcolumn<T>(data[i]);
             }
         }
 
-        csvrow(const std::initializer_list<csvrowcolumn<T>> &data) : columns(data) {}
+        const_csvrow(const std::initializer_list<csvrowcolumn<T>> &data) : columns(data) {}
 
         template<class U>
-        csvrow(const std::initializer_list<U> &list) : columns() {
+        const_csvrow(const std::initializer_list<U> &list) : columns() {
             columns.reserve(list.size());
             for (const U &val: list) {
                 columns.emplace_back(val);
             }
         }
 
-        csvrow<T> &operator=(const csvrow<T> &) = default;
-
-        csvrow<T> &operator=(const std::vector<csvrowcolumn<T>> &data) {
-            this->columns = data;
-            return *this;
-        }
-
-        template<class U>
-        csvrow<T> &operator=(const std::vector<U> &data) {
-            for (size_t i = 0; i < data.size(); i++) {
-                this->at(i).operator=(data.at(i));
-            }
-
-            return *this;
-        }
-
-        csvrow<T> &operator=(const std::initializer_list<csvrowcolumn<T>> &data) {
-            this->columns = std::vector<csvrowcolumn<T>>(data);
-            return *this;
-        }
-
-        template<class U>
-        csvrow<T> &operator=(const std::initializer_list<U> &data) {
-            for (size_t i = 0; i < data.size(); i++) {
-                this->at(i).operator=(data[i]);
-            }
-
-            return *this;
-        }
-
-        csvrowcolumn<T> &at(size_t index) {
-            if (index >= columns.size()) {
-                for (size_t i = columns.size(); i <= index; i++) {
-                    columns.emplace_back(nullptr);
-                }
-            }
-
-            return this->columns.at(index);
-        }
-
         const csvrowcolumn<T> &at(size_t index) const {
             return this->columns.at(index);
-        }
-
-        csvrowcolumn<T> &operator[](size_t columnIndex) {
-            return this->at(columnIndex);
         }
 
         const csvrowcolumn<T> &operator[](size_t columnIndex) const {
             return this->at(columnIndex);
         }
 
-        csvrow &operator<<(const csvrowcolumn<T> &col) {
-            columns.push_back(col);
-            return *this;
-        }
-
-        CSV_NODISCARD bool operator==(const csvrow<T> &other) const {
+        CSV_NODISCARD bool operator==(const const_csvrow<T> &other) const {
             if (this == &other) {
                 return true;
             }
@@ -740,28 +813,16 @@ namespace markusjx {
             }
         }
 
-        CSV_NODISCARD bool operator!=(const csvrow<T> &other) const {
+        CSV_NODISCARD bool operator!=(const const_csvrow<T> &other) const {
             return !this->operator==(other);
         }
 
-        csvrowcolumn<T> &get_next() {
-            return columns.emplace_back(nullptr);
-        }
-
-        typename std::vector<csvrowcolumn<T>>::iterator begin() noexcept {
+        CSV_NODISCARD virtual typename std::vector<csvrowcolumn<T>>::const_iterator begin() const noexcept {
             return columns.begin();
         }
 
-        CSV_NODISCARD typename std::vector<csvrowcolumn<T>>::const_iterator begin() const noexcept {
-            return columns.cbegin();
-        }
-
-        typename std::vector<csvrowcolumn<T>>::iterator end() noexcept {
+        CSV_NODISCARD virtual typename std::vector<csvrowcolumn<T>>::const_iterator end() const noexcept {
             return columns.end();
-        }
-
-        CSV_NODISCARD typename std::vector<csvrowcolumn<T>>::const_iterator end() const noexcept {
-            return columns.cend();
         }
 
         CSV_NODISCARD size_t size() const noexcept {
@@ -772,10 +833,6 @@ namespace markusjx {
             return columns.empty();
         }
 
-        void clear() noexcept {
-            columns.clear();
-        }
-
         CSV_NODISCARD T to_string(char separator = ';') const {
             if constexpr (util::is_u8_string_v<T>) {
                 return to_string_impl<std::stringstream>(separator);
@@ -784,7 +841,9 @@ namespace markusjx {
             }
         }
 
-    private:
+    protected:
+        const_csvrow &operator=(const const_csvrow<T> &) = default;
+
         template<class U>
         CSV_NODISCARD T to_string_impl(char separator) const {
             U ss;
@@ -796,6 +855,134 @@ namespace markusjx {
         }
 
         std::vector<csvrowcolumn<T>> columns;
+    };
+
+    template<class T>
+    class csvrow : public const_csvrow<T> {
+    public:
+        CSV_CHECK_T_SUPPORTED
+
+        static csvrow<T> parse(const T &value, const char separator) {
+            csvrow row(nullptr);
+            if (!value.empty()) {
+                for (const T &col : util::splitString(value, separator)) {
+                    row << csvrowcolumn<T>::parse(col);
+                }
+            }
+
+            return row;
+        }
+
+        using const_csvrow<T>::const_csvrow;
+
+        csvrow &operator=(const csvrow<T> &other) {
+            this->columns = other.columns;
+            return *this;
+        }
+
+        csvrow &operator=(const const_csvrow<T> &other) {
+            this->columns = other.columns;
+            return *this;
+        }
+
+        csvrow &operator=(const std::vector<csvrowcolumn<T>> &data) {
+            this->columns = data;
+            return *this;
+        }
+
+        template<class U>
+        csvrow &operator=(const std::vector<U> &data) {
+            for (size_t i = 0; i < data.size(); i++) {
+                this->at(i).operator=(data.at(i));
+            }
+
+            return *this;
+        }
+
+        csvrow &operator=(const std::initializer_list<csvrowcolumn<T>> &data) {
+            this->columns = std::vector<csvrowcolumn<T>>(data);
+            return *this;
+        }
+
+        template<class U>
+        csvrow &operator=(const std::initializer_list<U> &data) {
+            for (size_t i = 0; i < data.size(); i++) {
+                this->at(i).operator=(data[i]);
+            }
+
+            return *this;
+        }
+
+        csvrow operator+(const const_csvrow<T> &other) const {
+            csvrow<T> res(this->columns);
+            res << other;
+
+            return res;
+        }
+
+        csvrow &operator+=(const const_csvrow<T> &other) {
+            for (const csvrowcolumn<T> &col : other) {
+                this->columns.push_back(col);
+            }
+
+            return *this;
+        }
+
+        csvrowcolumn<T> &at(size_t index) {
+            if (index >= this->columns.size()) {
+                for (size_t i = this->columns.size(); i <= index; i++) {
+                    this->columns.emplace_back(nullptr);
+                }
+            }
+
+            return this->columns.at(index);
+        }
+
+        csvrowcolumn<T> &operator[](size_t columnIndex) {
+            return this->at(columnIndex);
+        }
+
+        csvrow &operator<<(const csvrowcolumn<T> &col) {
+            this->columns.push_back(col);
+            return *this;
+        }
+
+        csvrow &operator<<(const const_csvrow<T> &other) {
+            for (const csvrowcolumn<T> &col : other) {
+                *this << col;
+            }
+
+            return *this;
+        }
+
+        template<class U>
+        csvrow &push(const U &val) {
+            return this->operator<<(val);
+        }
+
+        csvrowcolumn<T> &get_next() {
+            return this->columns.emplace_back(nullptr);
+        }
+
+        CSV_NODISCARD typename std::vector<csvrowcolumn<T>>::const_iterator begin() const noexcept {
+            return this->columns.begin();
+        }
+
+        typename std::vector<csvrowcolumn<T>>::iterator begin() noexcept {
+            return this->columns.begin();
+        }
+
+        CSV_NODISCARD typename std::vector<csvrowcolumn<T>>::const_iterator end() const noexcept {
+            return this->columns.end();
+        }
+
+        typename std::vector<csvrowcolumn<T>>::iterator end() noexcept {
+            return this->columns.end();
+        }
+
+        void clear() noexcept {
+            this->columns.clear();
+        }
     };
 
     template<class T>
@@ -818,7 +1005,7 @@ namespace markusjx {
             return c;
         }
 
-        template<class U, class = typename std::enable_if<util::is_any_of_v<U, char, wchar_t>, int>>
+        template<class U, CSV_ENABLE_IF(util::is_any_of_v<U, char, wchar_t>) >
         static basic_csv_file<U> &endl(basic_csv_file<U> &f) {
             f.endline();
             return f;
@@ -1102,7 +1289,7 @@ namespace markusjx {
         CSV_NODISCARD T to_string_impl() const {
             U ss;
             for (size_t i = 0; i < rows.size(); i++) {
-                for (const csvrowcolumn<T> &col : rows[i]) {
+                for (const csvrowcolumn<T> &col : this->rows[i]) {
                     ss << col.rawValue() << separator;
                 }
 
@@ -1139,12 +1326,37 @@ namespace markusjx {
     private:
         using string_t = std::basic_string<T, std::char_traits<T>, std::allocator<T>>;
         using stream_t = std::basic_fstream<T, std::char_traits<T>>;
+        using cache_iterator = typename std::map<int64_t, string_t>::const_iterator;
     public:
-        static_assert(util::is_any_of_v<T, char, wchar_t>);
+        static_assert(util::is_any_of_v<T, char, wchar_t>, "T must be one of [char, wchar_t]");
+
+        class const_csv_file_row : public const_csvrow<string_t> {
+        public:
+            explicit const_csv_file_row(const csvrow<string_t> &data) : const_csvrow<string_t>(data) {}
+        };
+
+        class csv_file_row : public csvrow<string_t> {
+        public:
+            csv_file_row(basic_csv_file &file, const csvrow<string_t> &data, int64_t line) : csvrow<string_t>(data),
+                                                                                             line(line), file(file) {}
+
+            ~csv_file_row() {
+                file.writeToFile(this->to_string(file.separator), line);
+            }
+
+        private:
+            int64_t line;
+            basic_csv_file &file;
+        };
 
         explicit basic_csv_file(const string_t &path, size_t maxCached = 100, char separator = ';') : separator(
                 separator), path(path), cache(), maxCached(maxCached) {
-            currentLine = getNumLines();
+            currentLine = getMaxLineIndex();
+        }
+
+        basic_csv_file &operator=(const basic_csv<string_t> &csv) {
+            clear();
+            return this->push(csv);
         }
 
         basic_csv_file &operator<<(const char *val) {
@@ -1177,13 +1389,14 @@ namespace markusjx {
         }
 
         basic_csv_file &operator<<(const basic_csv<string_t> &el) {
-            const csvrow<string_t> line = getCurrentLine();
+            csvrow<string_t> line = getCurrentLine();
 
-            basic_csv<string_t> csv;
-            csv << line << el;
+            basic_csv<string_t> csv = el;
+            csv[0] = line + el[0];
+            cache.insert_or_assign(currentLine, csv.to_string());
 
             writeCacheToFile();
-            writeDataToFile({currentLine, csv.to_string()});
+            currentLine = getMaxLineIndex();
 
             return *this;
         }
@@ -1202,6 +1415,31 @@ namespace markusjx {
             return csv;
         }
 
+        template<class U>
+        basic_csv_file &push(const U &val) {
+            return this->operator<<(val);
+        }
+
+        const_csv_file_row at(size_t line) const {
+            if (line > getMaxLineIndex()) {
+                throw std::runtime_error("The requested line index does not exist");
+            }
+
+            return const_csv_file_row(getLine(line));
+        }
+
+        csv_file_row at(size_t line) {
+            return csv_file_row(*this, getOrCreateLine(line), line);
+        }
+
+        const_csv_file_row operator[](size_t line) const {
+            return this->at(line);
+        }
+
+        csv_file_row operator[](size_t line) {
+            return this->at(line);
+        }
+
         basic_csv<string_t> to_basic_csv() {
             basic_csv<string_t> csv;
             *this >> csv;
@@ -1210,14 +1448,17 @@ namespace markusjx {
         }
 
         basic_csv_file<T> &endline() {
-            // Insert a new line if the current line does not exist (Fix for \n\n...)
-            if (cache.find(currentLine) == cache.end() && currentLine > getNumLines()) {
-                cache.insert(std::pair<int64_t, string_t>(currentLine, string_t()));
-            }
-
-            // Increase currentLine
             currentLine++;
             return *this;
+        }
+
+        CSV_NODISCARD int64_t size() const {
+            return getMaxLineIndex() + 1;
+        }
+
+        void clear() {
+            cache.clear();
+            std::remove(util::string_as<std::string>(path).c_str());
         }
 
         void flush() {
@@ -1245,36 +1486,63 @@ namespace markusjx {
             }
         }
 
-        CSV_NODISCARD csvrow<string_t> getCurrentLine() const {
-            if (cache.find(currentLine) == cache.end()) {
-                stream_t in = getStream(std::ios::in);
-                gotoLine(in, currentLine);
-
-                string_t line;
-                std::getline(in, line);
-                in.close();
-
-                if (line.empty()) {
-                    return csvrow<string_t>(nullptr);
-                } else {
-                    return csvrow<string_t>::parse(line, separator);
-                }
+        csvrow<string_t> getOrCreateLine(int64_t line) {
+            if (line <= getMaxLineIndex()) {
+                return getLine(line);
             } else {
-                return csvrow<string_t>::parse(cache.at(currentLine), separator);
+                if (line > currentLine) currentLine = line;
+                cache.insert_or_assign(line, string_t());
+
+                return csvrow<string_t>(nullptr);
             }
         }
 
-        stream_t getStream(std::ios_base::openmode openMode) const {
+        CSV_NODISCARD csvrow<string_t> getLine(int64_t line) const {
+            if (line > getMaxLineIndex()) {
+                return csvrow<string_t>(nullptr);
+            }
+
+            const cache_iterator it = cache.find(line);
+            if (it == cache.end()) {
+                stream_t in = getStream(std::ios::in);
+                gotoLine(in, line);
+
+                string_t value;
+                std::getline(in, value);
+                in.close();
+
+                if (value.empty()) {
+                    return csvrow<string_t>(nullptr);
+                } else {
+                    return csvrow<string_t>::parse(value, separator);
+                }
+            } else {
+                return csvrow<string_t>::parse(it->second, separator);
+            }
+        }
+
+        CSV_NODISCARD csvrow<string_t> getCurrentLine() const {
+            return getLine(currentLine);
+        }
+
+        CSV_NODISCARD stream_t getStream(std::ios_base::openmode openMode) const {
             return stream_t(path, openMode);
         }
 
-        int64_t getNumLines() {
+        CSV_NODISCARD int64_t getMaxLineIndex() const {
             stream_t in = getStream(std::ios::in);
-            return std::count(std::istreambuf_iterator<T>(in), std::istreambuf_iterator<T>(), '\n');
+            int64_t fLines = std::count(std::istreambuf_iterator<T>(in), std::istreambuf_iterator<T>(), '\n');
+            in.close();
+
+            if (cache.empty()) {
+                return fLines;
+            } else {
+                return std::max(fLines, cache.rbegin()->first);
+            }
         }
 
         template<class U = string_t>
-        U getTmpFile() const {
+        CSV_NODISCARD U getTmpFile() const {
             string_t out = path;
             if constexpr (util::is_u8_string_v<string_t>) {
                 out += ".tmp";
@@ -1303,7 +1571,7 @@ namespace markusjx {
                     out << std::endl;
                 }
 
-                auto it = values.find(i++);
+                const cache_iterator it = values.find(i++);
                 if (it == values.end()) {
                     out << current;
                 } else {
@@ -1316,15 +1584,20 @@ namespace markusjx {
 
             // Write all values that were not already written to the file into the file
             if (!values.empty()) {
-                for (const std::pair<int64_t, string_t> &p : values) {
-                    if (i++ > 0) {
+                const int64_t max = values.rbegin()->first;
+                for (; i <= max; i++) {
+                    if (i > 0) {
                         out << std::endl;
                     }
 
-                    out << p.second;
+                    const cache_iterator it = values.find(i);
+                    if (it != values.end()) {
+                        out << it->second;
+                    }
                 }
             }
 
+            // Append a new line at the end, if required
             if (i <= currentLine) {
                 out << std::endl;
             }
@@ -1332,8 +1605,8 @@ namespace markusjx {
             out.flush();
             out.close();
 
-            std::remove(path.c_str());
-            std::rename(getTmpFile<std::string>().c_str(), path.c_str());
+            std::remove(util::string_as<std::string>(path).c_str());
+            std::rename(getTmpFile<std::string>().c_str(), util::string_as<std::string>(path).c_str());
         }
 
         static void gotoLine(stream_t &stream, int64_t num) {
@@ -1361,5 +1634,6 @@ namespace markusjx {
 #undef CSV_WINDOWS
 #undef CSV_UNIX
 #undef CSV_REQUIRES
+#undef CSV_ENABLE_IF
 
 #endif //MARKUSJX_CSV_HPP

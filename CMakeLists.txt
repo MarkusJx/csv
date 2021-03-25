@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD 17)
 # Get the ExternalProject module
 include(ExternalProject)
 
-add_executable(csv test.cpp csv.hpp)
+add_executable(${PROJECT_NAME} test.cpp csv.hpp)
 
 # Get and build gtest
 ExternalProject_Add(gtest_project

@@ -690,7 +690,7 @@ class CSVFileTest : public CSVTestBase {
 
 TEST_F(CSVFileTest, writeReadTest) {
     std::remove("test.csv");
-    markusjx::csv_file file("test.csv", 100);
+    markusjx::csv_file file("test.csv", 250);
     markusjx::csv csv;
 
     for (int i = 0; i < 1000; i++) {
@@ -703,13 +703,91 @@ TEST_F(CSVFileTest, writeReadTest) {
         csv << n << s << b << d << nullptr;
 
         // The file writer had issues with new lines, check that too
-        for (int j = 0; j < getRandomInt() % 4; j++) {
+        for (int j = 0; j < (getRandomInt() % 16); j++) {
             file << markusjx::csv::endl;
             csv << markusjx::csv::endl;
         }
+
+        EXPECT_EQ(file[i].to_string(), csv[i].to_string());
     }
 
     EXPECT_EQ(file.to_basic_csv(), csv);
+    std::remove("test.csv");
+}
+
+TEST_F(CSVFileTest, randomWriteTest) {
+    std::remove("test.csv");
+    markusjx::csv_file file("test.csv", 100);
+    markusjx::csv csv;
+
+    for (int i = 0; i < 100; i++) {
+        const int pos = std::abs(getRandomInt() % 1000);
+
+        const int n = getRandomInt();
+        const std::string s = getRandomString(20);
+        const bool b = getRandomBool();
+        const double d = getRandomDouble();
+
+        file[pos] << n << s << b << d << nullptr;
+        csv[pos] << n << s << b << d << nullptr;
+
+        EXPECT_EQ(file[pos], csv[pos]);
+    }
+
+    EXPECT_EQ(file.size(), csv.size());
+    EXPECT_EQ(file.to_basic_csv().to_string(), csv.to_string());
+    EXPECT_EQ(file.to_basic_csv(), csv);
+    std::remove("test.csv");
+}
+
+TEST_F(CSVFileTest, randomReadTest) {
+    std::remove("test.csv");
+    markusjx::csv_file file("test.csv", 1000);
+    markusjx::csv csv;
+
+    for (int i = 0; i < 1000; i++) {
+        const int n = getRandomInt();
+        const std::string s = getRandomString(20);
+        const bool b = getRandomBool();
+        const double d = getRandomDouble();
+
+        file << n << s << b << d << nullptr << markusjx::csv::endl;
+        csv << n << s << b << d << nullptr << markusjx::csv::endl;
+    }
+
+    file.flush();
+
+    for (int i = 0; i < 100; i++) {
+        const int pos = std::abs(getRandomInt() % 1000);
+
+        EXPECT_EQ(file[pos], csv[pos]);
+    }
+
+    std::remove("test.csv");
+}
+
+TEST_F(CSVFileTest, CSVObjectwriteTest) {
+    std::remove("test.csv");
+    markusjx::csv csv;
+
+    for (int i = 0; i < 1000; i++) {
+        const int n = getRandomInt();
+        const std::string s = getRandomString(20);
+        const bool b = getRandomBool();
+        const double d = getRandomDouble();
+
+        csv << n << s << b << d << nullptr << markusjx::csv::endl;
+    }
+
+    markusjx::csv_file file("test.csv");
+    file << csv;
+
+    std::ifstream ifs("test.csv");
+    markusjx::csv csv1;
+    ifs >> csv1;
+
+    EXPECT_EQ(csv.to_string(), csv1.to_string());
+    std::remove("test.csv");
 }
 
 int main(int argc, char **argv) {
