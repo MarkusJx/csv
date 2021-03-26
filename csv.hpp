@@ -2190,12 +2190,12 @@ namespace markusjx {
         CSV_NODISCARD T to_string_impl() const {
             U ss;
             for (size_t i = 0; i < rows.size(); i++) {
-                for (const csvrowcolumn<T> &col : this->rows[i]) {
-                    ss << col.rawValue() << separator;
+                if (i > 0) {
+                    ss << std::endl;
                 }
 
-                if (i < rows.size() - 1) {
-                    ss << std::endl;
+                for (const csvrowcolumn<T> &col : this->rows[i]) {
+                    ss << col.rawValue() << separator;
                 }
             }
 
@@ -2239,7 +2239,7 @@ namespace markusjx {
         using stream_t = std::basic_fstream<T, std::char_traits<T>>;
 
         // The cache iterator
-        using cache_iterator = typename std::map<int64_t, string_t>::const_iterator;
+        using cache_iterator = typename std::map<uint64_t, string_t>::const_iterator;
     public:
         static_assert(util::is_any_of_v<T, char, wchar_t>, "T must be one of [char, wchar_t]");
 
@@ -2294,7 +2294,8 @@ namespace markusjx {
          */
         explicit basic_csv_file(const string_t &path, size_t maxCached = 100, char separator = ';') : separator(
                 separator), path(path), cache(), maxCached(maxCached) {
-            currentLine = getMaxLineIndex();
+            // Assign the current line to the index of the last line in the file
+            currentLine = getLastFileLineIndex();
         }
 
         /**
@@ -2366,12 +2367,15 @@ namespace markusjx {
         basic_csv_file &operator<<(const basic_csv<string_t> &el) {
             csvrow<string_t> line = getCurrentLine();
 
+            // Assign el to csv and add el[0] to the existing
+            // line and push all of that into csv[o]
             basic_csv<string_t> csv = el;
             csv[0] = line + el[0];
             cache.insert_or_assign(currentLine, csv.to_string());
 
-            writeCacheToFile();
-            currentLine = getMaxLineIndex();
+            // Flush and reassign currentLine
+            flush();
+            currentLine = getLastFileLineIndex();
 
             return *this;
         }
@@ -2391,7 +2395,7 @@ namespace markusjx {
          * @return the csv object
          */
         friend basic_csv<string_t> &operator>>(basic_csv_file<T> &file, basic_csv<string_t> &csv) {
-            file.writeCacheToFile();
+            file.flush();
 
             stream_t in = file.getStream(std::ios::in);
             in >> csv;
@@ -2487,7 +2491,7 @@ namespace markusjx {
          *
          * @return the number if rows
          */
-        CSV_NODISCARD int64_t size() const {
+        CSV_NODISCARD uint64_t size() const {
             return getMaxLineIndex() + 1;
         }
 
@@ -2504,7 +2508,7 @@ namespace markusjx {
          */
         void flush() {
             // If the cache isn't empty, write it to the file
-            if (!cache.empty()) {
+            if (!cache.empty() || getLastFileLineIndex() < currentLine) {
                 writeCacheToFile();
             }
         }
@@ -2535,7 +2539,7 @@ namespace markusjx {
          * @param row the row to write
          * @param line the line of the row to write
          */
-        void writeToFile(const string_t &row, int64_t line) {
+        void writeToFile(const string_t &row, uint64_t line) {
             cache.insert_or_assign(line, row);
 
             // If the cache size is greater than or equal to
@@ -2553,7 +2557,7 @@ namespace markusjx {
          * @param line the zero-based index of the line to get
          * @return the created or retrieved row
          */
-        csvrow<string_t> getOrCreateLine(int64_t line) {
+        csvrow<string_t> getOrCreateLine(uint64_t line) {
             if (line <= getMaxLineIndex()) {
                 return getLine(line);
             } else {
@@ -2573,7 +2577,7 @@ namespace markusjx {
          * @param line the zero-based index of the line to get
          * @return the retrieved row
          */
-        CSV_NODISCARD csvrow<string_t> getLine(int64_t line) const {
+        CSV_NODISCARD csvrow<string_t> getLine(uint64_t line) const {
             // Return an empty row if line does not exist
             if (line > getMaxLineIndex()) {
                 return csvrow<string_t>(nullptr);
@@ -2623,22 +2627,33 @@ namespace markusjx {
         }
 
         /**
+         * Get the zero-based index of the last line in the file
+         *
+         * @return the last index
+         */
+        CSV_NODISCARD uint64_t getLastFileLineIndex() const {
+            // Get the stream to the file and count the lines
+            stream_t in = getStream(std::ios::in);
+            uint64_t lines = std::count(std::istreambuf_iterator<T>(in), std::istreambuf_iterator<T>(), '\n');
+            in.close();
+
+            return lines;
+        }
+
+        /**
          * Get the highest stored zero-based index in the file or cache
          *
          * @return the index of the last line in the file or cache
          */
-        CSV_NODISCARD int64_t getMaxLineIndex() const {
-            // Get the stream to the file and count the line
-            stream_t in = getStream(std::ios::in);
-            int64_t fLines = std::count(std::istreambuf_iterator<T>(in), std::istreambuf_iterator<T>(), '\n');
-            in.close();
+        CSV_NODISCARD uint64_t getMaxLineIndex() const {
+            const uint64_t fLines = getLastFileLineIndex();
 
             // IF the cache isn't empty get the highest number
             // in the cache and compare it to fLine. Return whatever is larger.
             if (cache.empty()) {
-                return fLines;
+                return std::max(fLines, currentLine);
             } else {
-                return std::max(fLines, cache.rbegin()->first);
+                return std::max(std::max(fLines, cache.rbegin()->first), currentLine);
             }
         }
 
@@ -2664,23 +2679,13 @@ namespace markusjx {
          * Write the cache to the csv file
          */
         void writeCacheToFile() {
-            writeDataToFile(cache);
-            cache.clear();
-        }
-
-        /**
-         * Write values to the file overwriting existing values
-         *
-         * @param values the values to write
-         */
-        void writeDataToFile(std::map<int64_t, string_t> &values) {
             // Delete the tmp file and get the streams
             std::remove(getTmpFile<std::string>().c_str());
             stream_t out(getTmpFile(), std::ios::out | std::ios::app);
             stream_t in = getStream(std::ios::in);
 
-            // The current line
-            int64_t i = 0;
+            // The current line index
+            uint64_t i = 0;
             // The content of the current line in the file
             string_t current;
             // Go to the beginning of the file
@@ -2694,12 +2699,12 @@ namespace markusjx {
                 // Check if the cache has a value for the current line.
                 // IF so, write that to the tmp file instead of the original value.
                 // If not, write the original value to the tmp file
-                const cache_iterator it = values.find(i++);
-                if (it == values.end()) {
+                const cache_iterator it = cache.find(i++);
+                if (it == cache.end()) {
                     out << current;
                 } else {
                     out << it->second;
-                    values.erase(it);
+                    cache.erase(it);
                 }
             }
 
@@ -2707,9 +2712,9 @@ namespace markusjx {
             in.close();
 
             // Write all values that were not already written to the file into the file
-            if (!values.empty()) {
-                // Get the highest line number in the cache
-                const int64_t max = values.rbegin()->first;
+            if (!cache.empty()) {
+                // Get the highest line number
+                const uint64_t max = getMaxLineIndex();
                 for (; i <= max; i++) {
                     // Prepend a new line if the current line is not zero
                     if (i > 0) {
@@ -2717,21 +2722,28 @@ namespace markusjx {
                     }
 
                     // Write the line to the file if a value for it exists in the cache
-                    const cache_iterator it = values.find(i);
-                    if (it != values.end()) {
+                    const cache_iterator it = cache.find(i);
+                    if (it != cache.end()) {
                         out << it->second;
+                    }
+                }
+            } else {
+                // Append new lines at the end, if required
+                const uint64_t max = getMaxLineIndex();
+                for (; i <= max; i++) {
+                    // Prepend a new line if the current line is not zero
+                    if (i > 0) {
+                        out << std::endl;
                     }
                 }
             }
 
-            // Append a new line at the end, if required
-            if (i <= currentLine) {
-                out << std::endl;
-            }
-
-            // Close and flush the output stream
+            // Flush and close the output stream
             out.flush();
             out.close();
+
+            // Clear the cache
+            cache.clear();
 
             // Delete the old csv file and rename the tmp file to it
             std::remove(util::string_as<std::string>(path).c_str());
@@ -2745,7 +2757,7 @@ namespace markusjx {
          * @param stream the stream to move
          * @param num the line to move to
          */
-        static void gotoLine(stream_t &stream, int64_t num) {
+        static void gotoLine(stream_t &stream, uint64_t num) {
             stream.seekg(std::ios::beg);
             for (size_t i = 0; i < num; i++) {
                 stream.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
@@ -2756,7 +2768,7 @@ namespace markusjx {
         size_t maxCached;
 
         // The row cache
-        std::map<int64_t, string_t> cache;
+        std::map<uint64_t, string_t> cache;
 
         // The value separator
         char separator;
@@ -2765,7 +2777,7 @@ namespace markusjx {
         string_t path;
 
         // The zero-based index of the current line
-        int64_t currentLine;
+        uint64_t currentLine;
     };
 
     /**

@@ -689,29 +689,37 @@ class CSVFileTest : public CSVTestBase {
 };
 
 TEST_F(CSVFileTest, writeReadTest) {
-    std::remove("test.csv");
-    markusjx::csv_file file("test.csv", 250);
-    markusjx::csv csv;
+    for (int x = 0; x < 30; x++) {
+        std::remove("test.csv");
+        markusjx::csv_file file("test.csv", 50);
+        markusjx::csv csv;
 
-    for (int i = 0; i < 1000; i++) {
-        const int n = getRandomInt();
-        const std::string s = getRandomString(20);
-        const bool b = getRandomBool();
-        const double d = getRandomDouble();
+        for (int i = 0; i < 100; i++) {
+            const int n = getRandomInt();
+            const std::string s = getRandomString(20);
+            const bool b = getRandomBool();
+            const double d = getRandomDouble();
 
-        file << n << s << b << d << nullptr;
-        csv << n << s << b << d << nullptr;
+            file << n << s << b << d << nullptr;
+            csv << n << s << b << d << nullptr;
 
-        // The file writer had issues with new lines, check that too
-        for (int j = 0; j < (getRandomInt() % 16); j++) {
+            // The file writer had issues with new lines, check that too
+            for (int j = 0; j < (getRandomInt() % 16); j++) {
+                file << markusjx::csv::endl;
+                csv << markusjx::csv::endl;
+            }
+
+            EXPECT_EQ(file[i].to_string(), csv[i].to_string());
+        }
+
+        for (int j = 0; j < 4; j++) {
             file << markusjx::csv::endl;
             csv << markusjx::csv::endl;
         }
 
-        EXPECT_EQ(file[i].to_string(), csv[i].to_string());
+        EXPECT_EQ(file.size(), csv.size());
+        EXPECT_EQ(file.to_basic_csv(), csv);
     }
-
-    EXPECT_EQ(file.to_basic_csv(), csv);
     std::remove("test.csv");
 }
 
@@ -786,7 +794,11 @@ TEST_F(CSVFileTest, CSVObjectwriteTest) {
     markusjx::csv csv1;
     ifs >> csv1;
 
-    EXPECT_EQ(csv.to_string(), csv1.to_string());
+    markusjx::csv csv2;
+    file >> csv2;
+
+    EXPECT_EQ(csv, csv1);
+    EXPECT_EQ(csv, csv2);
     std::remove("test.csv");
 }
 
