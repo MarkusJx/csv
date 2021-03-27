@@ -40,7 +40,8 @@
 #   if (defined(_MSVC_LANG) && _MSVC_LANG > 201402L) || __cplusplus > 201402L // C++17
 #       ifndef CSV_REQUIRES
 //          Use SFINAE to disable functions
-#           define CSV_REQUIRES(type, ...) template<class _SFINAE_PARAM_ = type, class = typename std::enable_if_t<::markusjx::util::is_any_of_v<_SFINAE_PARAM_, __VA_ARGS__>, int>>
+#           define CSV_REQUIRES(type, ...) template<class _SFINAE_PARAM_ = type, class = \
+                            typename std::enable_if_t<::markusjx::util::is_any_of_v<_SFINAE_PARAM_, __VA_ARGS__>, int>>
 #       endif //CSV_REQUIRES
 //      This looks awful, but it works
 #       define CSV_ENABLE_IF(...) class = typename std::enable_if_t<__VA_ARGS__, int>
@@ -1731,6 +1732,33 @@ namespace markusjx {
                                                                                               separator(separator) {}
 
         /**
+         * Create a csv object from a csv file
+         *
+         * @tparam U the template type of the csv file object
+         * @param file the csv file object to convert
+         */
+        template<class U, CSV_ENABLE_IF(util::is_any_of_v<U, char, wchar_t> &&
+                                                std::is_same_v<std::basic_string<U, std::char_traits<U>, std::allocator<U>>, T>) >
+        basic_csv(basic_csv_file<U> &file) : rows() {
+            basic_csv<T> converted = file.to_basic_csv();
+            rows = std::move(converted.rows);
+            separator = converted.separator;
+        }
+
+        /**
+         * Assign a csv file to this csv object
+         *
+         * @tparam U the template type of the csv file object
+         * @param file the csv file object to convert
+         * @return this, after the assignment
+         */
+        template<class U, CSV_ENABLE_IF(util::is_any_of_v<U, char, wchar_t> &&
+                                                std::is_same_v<std::basic_string<U, std::char_traits<U>, std::allocator<U>>, T>) >
+        basic_csv &operator=(basic_csv_file<U> &file) {
+            return this->operator=(std::move(file.to_basic_csv()));
+        }
+
+        /**
          * Get a row at an index.
          * Inserts the row if it doesn't exist.
          *
@@ -2173,6 +2201,7 @@ namespace markusjx {
          * @return the current row
          */
         csvrow<T> &get_current() {
+            // Push a new empty row to the row list if list is empty
             if (rows.empty()) {
                 rows.emplace_back(nullptr);
             }
@@ -2190,10 +2219,12 @@ namespace markusjx {
         CSV_NODISCARD T to_string_impl() const {
             U ss;
             for (size_t i = 0; i < rows.size(); i++) {
+                // Prepend a new line if there was already data written
                 if (i > 0) {
                     ss << std::endl;
                 }
 
+                // Write all cells to the string and append the separator
                 for (const csvrowcolumn<T> &col : this->rows[i]) {
                     ss << col.rawValue() << separator;
                 }
@@ -2371,11 +2402,10 @@ namespace markusjx {
             // line and push all of that into csv[o]
             basic_csv<string_t> csv = el;
             csv[0] = line + el[0];
-            cache.insert_or_assign(currentLine, csv.to_string());
+            writeToFile(csv.to_string(), currentLine);
 
-            // Flush and reassign currentLine
+            // Flush
             flush();
-            currentLine = getLastFileLineIndex();
 
             return *this;
         }
@@ -2388,7 +2418,8 @@ namespace markusjx {
         }
 
         /**
-         * Friend operator >> for writing to a csv object
+         * Friend operator >> for writing to a csv object.
+         * Triggers an instant rewrite of the stored date to the disk.
          *
          * @param file the file to read from
          * @param csv the csv object to write to
@@ -2423,11 +2454,12 @@ namespace markusjx {
          * @param line the zero-based index of the row
          * @return the const row
          */
-        const_csv_file_row at(size_t line) const {
+        const_csv_file_row at(uint64_t line) const {
             if (line > getMaxLineIndex()) {
                 throw std::runtime_error("The requested line index does not exist");
             }
 
+            translateLine(line);
             return const_csv_file_row(getLine(line));
         }
 
@@ -2438,7 +2470,8 @@ namespace markusjx {
          * @param line the zero-based index of the row
          * @return the row
          */
-        csv_file_row at(size_t line) {
+        csv_file_row at(uint64_t line) {
+            translateLine(line);
             return csv_file_row(*this, getOrCreateLine(line), line);
         }
 
@@ -2449,7 +2482,7 @@ namespace markusjx {
          * @param line the zero-based index of the row
          * @return the const row
          */
-        const_csv_file_row operator[](size_t line) const {
+        const_csv_file_row operator[](uint64_t line) const {
             return this->at(line);
         }
 
@@ -2460,7 +2493,7 @@ namespace markusjx {
          * @param line the zero-based index of the row
          * @return the row
          */
-        csv_file_row operator[](size_t line) {
+        csv_file_row operator[](uint64_t line) {
             return this->at(line);
         }
 
@@ -2496,10 +2529,42 @@ namespace markusjx {
         }
 
         /**
+         * Remove a csv row at an index
+         *
+         * @param index the zero-based index of the row to delete
+         */
+        void remove(uint64_t index) {
+            if (index > getMaxLineIndex()) {
+                throw std::runtime_error("The requested index is out of range");
+            }
+
+            // Translate the index
+            translateLine(index);
+
+            // Erase the line from the cache if it is stored in there
+            const cache_iterator it = cache.find(index);
+            if (it != cache.end()) {
+                cache.erase(it);
+            }
+
+            // Add the index to the list of lines to delete
+            // and sort that list as translateLine() depends
+            // on that list being sorted
+            toDelete.push_back(index);
+            std::sort(toDelete.begin(), toDelete.end());
+
+            // Flush if required
+            if (getCacheSize() >= maxCached) {
+                flush();
+            }
+        }
+
+        /**
          * Clear the cache and delete the file
          */
         void clear() {
             cache.clear();
+            toDelete.clear();
             std::remove(util::string_as<std::string>(path).c_str());
         }
 
@@ -2508,7 +2573,7 @@ namespace markusjx {
          */
         void flush() {
             // If the cache isn't empty, write it to the file
-            if (!cache.empty() || getLastFileLineIndex() < currentLine) {
+            if (getCacheSize() > 0 || getMaxLineIndex() < currentLine || currentLine != getLastFileLineIndex()) {
                 writeCacheToFile();
             }
         }
@@ -2533,6 +2598,29 @@ namespace markusjx {
 
     private:
         /**
+         * Translate a line index to the actual index to use.
+         * This is required as line deletions are cached and
+         * not instantly written to the disk to preserve the
+         * indices for the user as if the lines were deleted.
+         * If we take a look at the array {0, 1, 2, 3} and
+         * delete the item with index zero, the item with the
+         * index one will now be the first element in the
+         * array, so arr[0]. But as long as we don't actually
+         * delete arr[0], object '1' will be at position one
+         * but the user should think it is at position zero,
+         * so if the user wants arr[0], we'll have to translate
+         * that so we can return arr[1], which will become
+         * arr[0] once we flush the cache.
+         *
+         * @param line the line index to "translate"
+         */
+        void translateLine(uint64_t &line) const {
+            for (size_t i = 0; i < toDelete.size() && toDelete[i] <= line; i++) {
+                line++;
+            }
+        }
+
+        /**
          * Write a row to the file.
          * Replaces any other values on the same line.
          *
@@ -2544,7 +2632,7 @@ namespace markusjx {
 
             // If the cache size is greater than or equal to
             // the max size, write the cache to the file
-            if (cache.size() >= maxCached) {
+            if (getCacheSize() >= maxCached) {
                 writeCacheToFile();
             }
         }
@@ -2554,17 +2642,17 @@ namespace markusjx {
          * Basically creates a row if it doesn't
          * exist or returns the existing one.
          *
-         * @param line the zero-based index of the line to get
+         * @param line the zero-based index of the line to get (translated)
          * @return the created or retrieved row
          */
         csvrow<string_t> getOrCreateLine(uint64_t line) {
-            if (line <= getMaxLineIndex()) {
+            if (line <= getTranslatedMaxLineIndex()) {
                 return getLine(line);
             } else {
                 // If line is greater than currentLine,
                 // set currentLine to line
                 if (line > currentLine) currentLine = line;
-                cache.insert_or_assign(line, string_t());
+                writeToFile(string_t(), line);
 
                 return csvrow<string_t>(nullptr);
             }
@@ -2579,7 +2667,7 @@ namespace markusjx {
          */
         CSV_NODISCARD csvrow<string_t> getLine(uint64_t line) const {
             // Return an empty row if line does not exist
-            if (line > getMaxLineIndex()) {
+            if (line > getTranslatedMaxLineIndex()) {
                 return csvrow<string_t>(nullptr);
             }
 
@@ -2641,11 +2729,12 @@ namespace markusjx {
         }
 
         /**
-         * Get the highest stored zero-based index in the file or cache
+         * Get the highest stored zero-based index in the file or cache.
+         * Only works for values that were translated.
          *
-         * @return the index of the last line in the file or cache
+         * @return the index of the last line in the file or cache before anything was deleted
          */
-        CSV_NODISCARD uint64_t getMaxLineIndex() const {
+        CSV_NODISCARD uint64_t getTranslatedMaxLineIndex() const {
             const uint64_t fLines = getLastFileLineIndex();
 
             // IF the cache isn't empty get the highest number
@@ -2655,6 +2744,16 @@ namespace markusjx {
             } else {
                 return std::max(std::max(fLines, cache.rbegin()->first), currentLine);
             }
+        }
+
+        /**
+         * Get the highest stored zero-based index in the file or cache.
+         * Subtracts the number of lines to delete.
+         *
+         * @return the index of the last line in the file or cache
+         */
+        CSV_NODISCARD uint64_t getMaxLineIndex() const {
+            return getTranslatedMaxLineIndex() - toDelete.size();
         }
 
         /**
@@ -2684,6 +2783,8 @@ namespace markusjx {
             stream_t out(getTmpFile(), std::ios::out | std::ios::app);
             stream_t in = getStream(std::ios::in);
 
+            // Whether there was already a line written to the output file
+            bool lineWritten = false;
             // The current line index
             uint64_t i = 0;
             // The content of the current line in the file
@@ -2691,21 +2792,33 @@ namespace markusjx {
             // Go to the beginning of the file
             in.seekg(std::ios::beg);
             while (std::getline(in, current)) {
-                // Prepend a new line if the current line is not zero
-                if (i > 0) {
+                // Skip lines that were marked for deletion
+                if (std::find(toDelete.begin(), toDelete.end(), i) != toDelete.end()) {
+                    // Increase i and skip this iteration
+                    i++;
+                    continue;
+                }
+
+                // Prepend a new line if there was already a line written to the file
+                if (lineWritten) {
                     out << std::endl;
+                } else {
+                    lineWritten = true;
                 }
 
                 // Check if the cache has a value for the current line.
                 // IF so, write that to the tmp file instead of the original value.
                 // If not, write the original value to the tmp file
-                const cache_iterator it = cache.find(i++);
+                const cache_iterator it = cache.find(i);
                 if (it == cache.end()) {
                     out << current;
                 } else {
                     out << it->second;
                     cache.erase(it);
                 }
+
+                // Increase the line counter
+                i++;
             }
 
             // Close the input stream
@@ -2714,11 +2827,19 @@ namespace markusjx {
             // Write all values that were not already written to the file into the file
             if (!cache.empty()) {
                 // Get the highest line number
-                const uint64_t max = getMaxLineIndex();
+                const uint64_t max = getTranslatedMaxLineIndex();
                 for (; i <= max; i++) {
-                    // Prepend a new line if the current line is not zero
-                    if (i > 0) {
+                    // Skip lines that were marked for deletion
+                    if (std::find(toDelete.begin(), toDelete.end(), i) != toDelete.end()) {
+                        // This line was marked for deletion, skip
+                        continue;
+                    }
+
+                    // Prepend a new line if there was already a line written to the file
+                    if (lineWritten) {
                         out << std::endl;
+                    } else {
+                        lineWritten = true;
                     }
 
                     // Write the line to the file if a value for it exists in the cache
@@ -2729,11 +2850,19 @@ namespace markusjx {
                 }
             } else {
                 // Append new lines at the end, if required
-                const uint64_t max = getMaxLineIndex();
+                const uint64_t max = getTranslatedMaxLineIndex();
                 for (; i <= max; i++) {
-                    // Prepend a new line if the current line is not zero
-                    if (i > 0) {
+                    // Skip lines that were marked for deletion
+                    if (std::find(toDelete.begin(), toDelete.end(), i) != toDelete.end()) {
+                        // This line was marked for deletion, skip
+                        continue;
+                    }
+
+                    // Prepend a new line if there was already a line written to the file
+                    if (lineWritten) {
                         out << std::endl;
+                    } else {
+                        lineWritten = true;
                     }
                 }
             }
@@ -2744,10 +2873,18 @@ namespace markusjx {
 
             // Clear the cache
             cache.clear();
+            toDelete.clear();
 
             // Delete the old csv file and rename the tmp file to it
             std::remove(util::string_as<std::string>(path).c_str());
             std::rename(getTmpFile<std::string>().c_str(), util::string_as<std::string>(path).c_str());
+
+            // Assign currentLine to the last line in the file
+            currentLine = getLastFileLineIndex();
+        }
+
+        CSV_NODISCARD size_t getCacheSize() const {
+            return cache.size() + toDelete.size();
         }
 
         /**
@@ -2763,6 +2900,8 @@ namespace markusjx {
                 stream.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
             }
         }
+
+        std::vector<uint64_t> toDelete;
 
         // The maximum amount of cached values
         size_t maxCached;

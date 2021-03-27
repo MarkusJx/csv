@@ -13,6 +13,11 @@
 
 #define CSV_FOR for (int i = 0; i < numValues; i++)
 
+#define WRITE_DEBUG_FILE() file.flush();\
+                std::ofstream o("test1.csv");\
+                o << csv;\
+                o.close()
+
 class CSVTestBase : public ::testing::Test {
 protected:
     CSVTestBase()
@@ -689,12 +694,12 @@ class CSVFileTest : public CSVTestBase {
 };
 
 TEST_F(CSVFileTest, writeReadTest) {
-    for (int x = 0; x < 30; x++) {
+    for (int x = 0; x < 100; x++) {
         std::remove("test.csv");
         markusjx::csv_file file("test.csv", 50);
         markusjx::csv csv;
 
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < 50; i++) {
             const int n = getRandomInt();
             const std::string s = getRandomString(20);
             const bool b = getRandomBool();
@@ -794,12 +799,248 @@ TEST_F(CSVFileTest, CSVObjectwriteTest) {
     markusjx::csv csv1;
     ifs >> csv1;
 
-    markusjx::csv csv2;
-    file >> csv2;
+    markusjx::csv csv2 = file;
 
     EXPECT_EQ(csv, csv1);
     EXPECT_EQ(csv, csv2);
     std::remove("test.csv");
+}
+
+TEST_F(CSVFileTest, deleteTest) {
+    for (int x = 0; x < 100; x++) {
+        std::remove("test.csv");
+        markusjx::csv csv;
+        markusjx::csv_file file("test.csv");
+
+        for (int i = 0; i < 50; i++) {
+            const int n = getRandomInt();
+            const std::string s = getRandomString(20);
+            const bool b = getRandomBool();
+            const double d = getRandomDouble();
+
+            file << n << s << b << d << nullptr;
+            csv << n << s << b << d << nullptr;
+
+            for (int j = 0; j < (getRandomInt() % 16); j++) {
+                file << markusjx::csv::endl;
+                csv << markusjx::csv::endl;
+            }
+        }
+
+        file.flush();
+
+        // We can't actually always remove 50 lines. If there are less
+        // than 50 lines we'll get an arithmetic exception, which is not so good
+        for (int i = 0; i < std::min(static_cast<int>(csv.size() - 5), 50); i++) {
+            const int pos = std::abs(getRandomInt() % static_cast<int>(csv.size() - 1));
+
+            file.remove(pos);
+            csv.remove(pos);
+        }
+
+        EXPECT_EQ(file.size(), csv.size());
+        EXPECT_EQ(file.to_basic_csv(), csv);
+        std::remove("test.csv");
+    }
+}
+
+TEST_F(CSVFileTest, cacheDeleteTest) {
+    for (int x = 0; x < 100; x++) {
+        std::remove("test.csv");
+        markusjx::csv csv;
+        markusjx::csv_file file("test.csv", 1000);
+
+        for (int i = 0; i < 50; i++) {
+            const int n = getRandomInt();
+            const std::string s = getRandomString(20);
+            const bool b = getRandomBool();
+            const double d = getRandomDouble();
+
+            file << n << s << b << d << nullptr;
+            csv << n << s << b << d << nullptr;
+
+            for (int j = 0; j < (getRandomInt() % 16); j++) {
+                file << markusjx::csv::endl;
+                csv << markusjx::csv::endl;
+            }
+        }
+
+        // Just check if both objects are the same size, any other check would trigger a flush
+        EXPECT_EQ(file.size(), csv.size());
+
+        // We can't actually always remove 50 lines. If there are less
+        // than 50 lines we'll get an arithmetic exception, which is not so good
+        for (int i = 0; i < std::min(static_cast<int>(csv.size() - 5), 50); i++) {
+            const int pos = std::abs(getRandomInt() % static_cast<int>(csv.size() - 1));
+
+            file.remove(pos);
+            csv.remove(pos);
+        }
+
+        EXPECT_EQ(file.size(), csv.size());
+        EXPECT_EQ(file.to_basic_csv(), csv);
+        std::remove("test.csv");
+    }
+}
+
+TEST_F(CSVFileTest, deleteAccessTest) {
+    for (int x = 0; x < 100; x++) {
+        std::remove("test.csv");
+        markusjx::csv csv;
+        markusjx::csv_file file("test.csv");
+
+        for (int i = 0; i < 50; i++) {
+            const int n = getRandomInt();
+            const std::string s = getRandomString(20);
+            const bool b = getRandomBool();
+            const double d = getRandomDouble();
+
+            file << n << s << b << d << nullptr;
+            csv << n << s << b << d << nullptr;
+
+            for (int j = 0; j < (getRandomInt() % 16); j++) {
+                file << markusjx::csv::endl;
+                csv << markusjx::csv::endl;
+            }
+        }
+
+        file.flush();
+        EXPECT_EQ(file.size(), csv.size());
+
+        // We can't actually always remove 50 lines. If there are less
+        // than 50 lines we'll get an arithmetic exception, which is not so good
+        for (int i = 0; i < std::min(static_cast<int>(csv.size() - 5), 50); i++) {
+            const int pos = std::abs(getRandomInt() % static_cast<int>(csv.size() - 1));
+
+            file.remove(pos);
+            csv.remove(pos);
+            file.flush();
+
+            const int p1 = std::abs(pos - 1);
+            const int p2 = std::min<int>(pos, csv.size() - 1);
+
+            if (file[p1] != csv[p1]) {
+                EXPECT_EQ(file[p1], csv[p1]);
+            }
+
+            EXPECT_EQ(file.size(), csv.size());
+            EXPECT_EQ(file[p1], csv[p1]);
+            EXPECT_EQ(file[p2], csv[p2]);
+        }
+
+        WRITE_DEBUG_FILE();
+
+        EXPECT_EQ(file.size(), csv.size());
+        EXPECT_EQ(file.to_basic_csv(), csv);
+        std::remove("test.csv");
+    }
+}
+
+TEST_F(CSVFileTest, cacheDeleteAccessTest) {
+    for (int x = 0; x < 100; x++) {
+        std::remove("test.csv");
+        markusjx::csv csv;
+        markusjx::csv_file file("test.csv");
+
+        for (int i = 0; i < 50; i++) {
+            const int n = getRandomInt();
+            const std::string s = getRandomString(20);
+            const bool b = getRandomBool();
+            const double d = getRandomDouble();
+
+            file << n << s << b << d << nullptr;
+            csv << n << s << b << d << nullptr;
+
+            for (int j = 0; j < (getRandomInt() % 16); j++) {
+                file << markusjx::csv::endl;
+                csv << markusjx::csv::endl;
+            }
+        }
+
+        // Just check if both objects are the same size, any other check would trigger a flush
+        EXPECT_EQ(file.size(), csv.size());
+
+        // We can't actually always remove 50 lines. If there are less
+        // than 50 lines we'll get an arithmetic exception, which is not so good
+        for (int i = 0; i < std::min(static_cast<int>(csv.size() - 5), 50); i++) {
+            const int pos = std::abs(getRandomInt() % static_cast<int>(csv.size() - 1));
+
+            file.remove(pos);
+            csv.remove(pos);
+
+            const int p1 = std::abs(pos - 1);
+            const int p2 = std::min<int>(pos, csv.size() - 1);
+
+            if (file[p1] != csv[p1]) {
+                EXPECT_EQ(file[p1], csv[p1]);
+            }
+
+            EXPECT_EQ(file.size(), csv.size());
+            EXPECT_EQ(file[p1], csv[p1]);
+            EXPECT_EQ(file[p2], csv[p2]);
+        }
+
+        EXPECT_EQ(file.size(), csv.size());
+        EXPECT_EQ(file.to_basic_csv(), csv);
+        std::remove("test.csv");
+    }
+}
+
+TEST_F(CSVFileTest, cacheDeleteAppendTest) {
+    for (int x = 0; x < 100; x++) {
+        std::remove("test.csv");
+        markusjx::csv csv;
+        markusjx::csv_file file("test.csv");
+
+        for (int i = 0; i < 50; i++) {
+            const int n = getRandomInt();
+            const std::string s = getRandomString(20);
+            const bool b = getRandomBool();
+            const double d = getRandomDouble();
+
+            file << n << s << b << d << nullptr;
+            csv << n << s << b << d << nullptr;
+
+            for (int j = 0; j < (getRandomInt() % 16); j++) {
+                file << markusjx::csv::endl;
+                csv << markusjx::csv::endl;
+            }
+        }
+
+        // Just check if both objects are the same size, any other check would trigger a flush
+        EXPECT_EQ(file.size(), csv.size());
+
+        // We can't actually always remove 50 lines. If there are less
+        // than 50 lines we'll get an arithmetic exception, which is not so good
+        for (int i = 0; i < std::min(static_cast<int>(csv.size() - 5), 50); i++) {
+            const int pos = std::abs(getRandomInt() % static_cast<int>(csv.size() - 1));
+
+            file.remove(pos);
+            csv.remove(pos);
+
+            EXPECT_EQ(file.size(), csv.size());
+        }
+
+        // Append new data
+        for (int i = 0; i < 50; i++) {
+            const int n = getRandomInt();
+            const std::string s = getRandomString(20);
+            const bool b = getRandomBool();
+            const double d = getRandomDouble();
+
+            file << n << s << b << d << nullptr;
+            csv << n << s << b << d << nullptr;
+
+            for (int j = 0; j < (getRandomInt() % 16); j++) {
+                file << markusjx::csv::endl;
+                csv << markusjx::csv::endl;
+            }
+        }
+
+        EXPECT_EQ(file.size(), csv.size());
+        EXPECT_EQ(file.to_basic_csv(), csv);
+        std::remove("test.csv");
+    }
 }
 
 int main(int argc, char **argv) {
