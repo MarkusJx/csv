@@ -928,8 +928,6 @@ TEST_F(CSVFileTest, deleteAccessTest) {
             EXPECT_EQ(file[p2], csv[p2]);
         }
 
-        WRITE_DEBUG_FILE();
-
         EXPECT_EQ(file.size(), csv.size());
         EXPECT_EQ(file.to_basic_csv(), csv);
         std::remove("test.csv");

@@ -2323,8 +2323,8 @@ namespace markusjx {
          * @param maxCached the number of cached elements
          * @param separator the separator to use
          */
-        explicit basic_csv_file(const string_t &path, size_t maxCached = 100, char separator = ';') : separator(
-                separator), path(path), cache(), maxCached(maxCached) {
+        explicit basic_csv_file(const string_t &path, size_t maxCached = 100, char separator = ';')
+                : toDelete(), maxCached(maxCached), cache(), separator(separator), path(path) {
             // Assign the current line to the index of the last line in the file
             currentLine = getLastFileLineIndex();
         }
@@ -2901,6 +2901,7 @@ namespace markusjx {
             }
         }
 
+        // The lines to delete on flush
         std::vector<uint64_t> toDelete;
 
         // The maximum amount of cached values

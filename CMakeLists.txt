@@ -7,6 +7,14 @@ set(CMAKE_CXX_STANDARD 17)
 # Get the ExternalProject module
 include(ExternalProject)
 
+if (MSVC)
+    # warning level 4
+    add_compile_options(/W4)
+else()
+    # lots of warnings
+    add_compile_options(-Wall -Wextra -pedantic)
+endif()
+
 add_executable(${PROJECT_NAME} test.cpp csv.hpp)
 
 # Get and build gtest
