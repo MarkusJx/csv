@@ -964,7 +964,7 @@ TEST_F(CSVFileTest, deleteAccessTest) {
             file.flush();
 
             const int p1 = std::abs(pos - 1);
-            const int p2 = std::min<int>(pos, csv.size() - 1);
+            const int p2 = std::min<int>(pos, static_cast<int>(csv.size() - 1));
 
             if (file[p1] != csv[p1]) {
                 EXPECT_EQ(file[p1], csv[p1]);
@@ -1014,7 +1014,7 @@ TEST_F(CSVFileTest, cacheDeleteAccessTest) {
             csv.remove(pos);
 
             const int p1 = std::abs(pos - 1);
-            const int p2 = std::min<int>(pos, csv.size() - 1);
+            const int p2 = std::min<int>(pos, static_cast<int>(csv.size() - 1));
 
             if (file[p1] != csv[p1]) {
                 EXPECT_EQ(file[p1], csv[p1]);

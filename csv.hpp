@@ -460,7 +460,8 @@ namespace markusjx {
                 // Create the result string
                 T res;
 
-                // Iterate over the string to convert
+                // Iterate over the string to convert.
+                // Use ptrdiff_t as type as it is the signed counterpart to size_t.
                 for (ptrdiff_t i = 0; i < static_cast<signed>(toConvert.size()); i++) {
                     // Only continue if the current character is a backslash
                     // and i + 1 is smaller than the size of toConvert
@@ -470,7 +471,7 @@ namespace markusjx {
 
                         // Get the number of backslashes before this
                         uint8_t backslashes = 0;
-                        for (int j = i; j >= 0 && toConvert[j] == '\\'; j--) {
+                        for (ptrdiff_t j = i; j >= 0 && toConvert[j] == '\\'; j--) {
                             backslashes = (backslashes + 1) % 2;
                         }
 
