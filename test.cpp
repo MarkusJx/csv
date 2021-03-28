@@ -5,7 +5,7 @@
 
 #include "csv.hpp"
 
-#define CSV_ASSERT_NUM_MATCH() ASSERT_EQ(csv.numElements(), (index + 1) * numValues)
+#define CSV_ASSERT_NUM_MATCH() ASSERT_EQ(csv.numElements(), static_cast<uint64_t>((index + 1) * numValues))
 
 #define CSV_CLEAR() CSV_ASSERT_NUM_MATCH();\
                     csv[index].clear();\
@@ -167,7 +167,7 @@ markusjx::csv CSVTest::csv;
 TEST_F(CSVTest, emptyCheck) {
     ASSERT_TRUE(csv.empty());
     ASSERT_EQ(csv.size(), static_cast<size_t>(0));
-    ASSERT_EQ(csv.numElements(), 0);
+    ASSERT_EQ(csv.numElements(), static_cast<uint64_t>(0));
 }
 
 TEST_F(CSVTest, integerTest) {
@@ -215,13 +215,13 @@ TEST_F(ConstructorTest, fromVectorTest) {
     }
 
     markusjx::csv csv = data;
-    EXPECT_EQ(csv.numElements(), 400);
+    EXPECT_EQ(csv.numElements(), static_cast<uint64_t>(400));
 }
 
 TEST_F(ConstructorTest, fromInitializerListTest) {
     markusjx::csv csv = {{"abc", 1,  5,    'd',   false},
                          {25,    42, true, "def", nullptr, "ye"}};
-    EXPECT_EQ(csv.numElements(), 11);
+    EXPECT_EQ(csv.numElements(), static_cast<uint64_t>(11));
 }
 
 TEST_F(ConstructorTest, appendTest) {
@@ -232,7 +232,7 @@ TEST_F(ConstructorTest, appendTest) {
 
     csv1 << csv2;
 
-    EXPECT_EQ(csv1.numElements(), 22);
+    EXPECT_EQ(csv1.numElements(), static_cast<uint64_t>(22));
 }
 
 TEST_F(ConstructorTest, parseTest) {
