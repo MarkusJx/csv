@@ -79,6 +79,77 @@
 
 namespace markusjx {
     /**
+     * A namespace for exceptions
+     */
+    namespace exceptions {
+        /**
+         * A generic exception
+         */
+        class exception : public std::runtime_error {
+        public:
+            /**
+             * Get the exception type
+             *
+             * @return the exception type
+             */
+            CSV_NODISCARD const char *getType() const noexcept {
+                return type;
+            }
+
+        protected:
+            /**
+             * Create an exception
+             *
+             * @param type the exception type
+             * @param msg the error message
+             */
+            exception(const char *type, const std::string &msg) : std::runtime_error(msg), type(type) {}
+
+            // The exception type
+            const char *type;
+        };
+
+        /**
+         * A parse error
+         */
+        class parse_error : public exception {
+        public:
+            /**
+             * Create a parse error
+             *
+             * @param msg the error message
+             */
+            explicit parse_error(const std::string &msg) : exception("ParseError", msg) {}
+        };
+
+        /**
+         * A conversion error
+         */
+        class conversion_error : public exception {
+        public:
+            /**
+             * Create a conversion error
+             *
+             * @param msg the error message
+             */
+            explicit conversion_error(const std::string &msg) : exception("ConversionError", msg) {}
+        };
+
+        /**
+         * An index out of range error
+         */
+        class index_out_of_range_error : public exception {
+        public:
+            /**
+             * Create an index out of range error
+             *
+             * @param msg the error message
+             */
+            explicit index_out_of_range_error(const std::string &msg) : exception("IndexOutOfRangeError", msg) {}
+        };
+    } // namespace exceptions
+
+    /**
      * A utility namespace
      */
     namespace util {
@@ -121,7 +192,41 @@ namespace markusjx {
             std::vector<T> tokens;
             size_t prev = 0, pos;
             do {
-                pos = str.find(delimiter, prev);
+                bool isString = str[prev] == '\"';
+
+                // Set the string offset to prev
+                size_t str_offset = prev;
+                if (isString) {
+                    // The number of backslashes
+                    short backslashes = 0;
+                    for (size_t i = prev + 1; i < str.length(); i++) {
+                        // If the current character is a backslash, increase backslashes
+                        if (str[i] == '\\') {
+                            backslashes = (backslashes + 1) % 2;
+                        } else {
+                            // If the current character is a quotation mark and
+                            // the number of backslashes in front of it is even,
+                            // set the string offset to i as the end of the string
+                            // is found and stop the loop.
+                            if (str[i] == '\"' && backslashes == 0) {
+                                str_offset = i;
+                                isString = false;
+                                break;
+                            } else {
+                                // The character is not a backslash, reset the backslash counter
+                                backslashes = 0;
+                            }
+                        }
+                    }
+                }
+
+                // If isString is still true, the string did
+                // never end, therefore the input is malformed
+                if (isString) {
+                    throw exceptions::parse_error("Missing quotation mark at the end of the string");
+                }
+
+                pos = str.find(delimiter, str_offset);
                 if (pos == T::npos) pos = str.length();
                 T token = str.substr(prev, pos - prev);
                 tokens.push_back(token);
@@ -145,7 +250,7 @@ namespace markusjx {
             T res = conversionFunc(str, &idx);
 
             if (idx != 0 && idx != str.size()) {
-                throw std::runtime_error("Could not fully convert the value");
+                throw exceptions::conversion_error("Could not fully convert the value");
             } else {
                 return res;
             }
@@ -166,7 +271,7 @@ namespace markusjx {
             T res = conversionFunc(str, &idx, 10);
 
             if (idx == 0) {
-                throw std::runtime_error("Could not convert the value");
+                throw exceptions::conversion_error("Could not convert the value");
             } else {
                 return res;
             }
@@ -187,12 +292,12 @@ namespace markusjx {
 
             errno_t err = wcstombs_s(&outSize, out.data(), out.size(), in.c_str(), in.size());
             if (err) {
-                throw std::runtime_error("Could not convert the string");
+                throw exceptions::conversion_error("Could not convert the string");
             }
 #elif defined(CSV_UNIX)
             size_t written = wcstombs(out.data(), in.c_str(), in.size());
             if (written == static_cast<size_t>(-1)) {
-                throw std::runtime_error("Could not convert the string");
+                throw exceptions::conversion_error("Could not convert the string");
             }
 #endif // WINODWS OR UNIX
 
@@ -213,12 +318,12 @@ namespace markusjx {
             size_t outSize;
             errno_t err = mbstowcs_s(&outSize, (wchar_t *) out.data(), out.size(), in.c_str(), in.size());
             if (err) {
-                throw std::runtime_error("Could not create the string");
+                throw exceptions::conversion_error("Could not create the string");
             }
 #elif defined(CSV_UNIX)
             size_t written = mbstowcs(out.data(), in.c_str(), in.size());
             if (written == static_cast<size_t>(-1)) {
-                throw std::runtime_error("Could not convert the string");
+                throw exceptions::conversion_error("Could not convert the string");
             }
 #endif // WINDOWS OR UNIX
 
@@ -248,14 +353,150 @@ namespace markusjx {
                 return string_to_wstring(str);
             }
         }
-    }
+
+        template<class T, class C = typename T::value_type>
+        class escape_sequence_generator {
+        public:
+            CSV_CHECK_T_SUPPORTED
+
+            /**
+             * Escape a character
+             *
+             * @param character the character to escape
+             * @return the escaped character string
+             */
+            virtual T escape_character(C character) const {
+                switch (character) {
+                    case '\a':
+                        return string_as<T>(std::string("\\a"));
+                    case '\b':
+                        return string_as<T>(std::string("\\b"));
+                    case '\f':
+                        return string_as<T>(std::string("\\f"));
+                    case '\n':
+                        return string_as<T>(std::string("\\n"));
+                    case '\r':
+                        return string_as<T>(std::string("\\r"));
+                    case '\t':
+                        return string_as<T>(std::string("\\t"));
+                    case '\v':
+                        return string_as<T>(std::string("\\v"));
+                    case '\"':
+                        return string_as<T>(std::string("\\\""));
+                    case '\\':
+                        return string_as<T>(std::string("\\\\"));
+                    default:
+                        return T(1, character);
+                }
+            }
+
+            /**
+             * Escape a string
+             *
+             * @param toConvert the string to escape
+             * @return the escaped string
+             */
+            virtual T escape_string(const T &toConvert) const {
+                T res;
+                for (const C character : toConvert) {
+                    res.append(escape_character(character));
+                }
+
+                return res;
+            }
+
+            /**
+             * Un-escape a character
+             *
+             * @param character the character to un-escape
+             * @param converted will be set to true if the character could be un-escaped
+             * @return the un-escaped character
+             */
+            virtual C unescape_character(C character, bool &converted) const {
+                switch (character) {
+                    case 'a':
+                        converted = true;
+                        return static_cast<C>('\a');
+                    case 'b':
+                        converted = true;
+                        return static_cast<C>('\b');
+                    case 'f':
+                        converted = true;
+                        return static_cast<C>('\f');
+                    case 'n':
+                        converted = true;
+                        return static_cast<C>('\n');
+                    case 'r':
+                        converted = true;
+                        return static_cast<C>('\r');
+                    case 't':
+                        converted = true;
+                        return static_cast<C>('\t');
+                    case 'v':
+                        converted = true;
+                        return static_cast<C>('\v');
+                    case '\"':
+                        converted = true;
+                        return static_cast<C>('\"');
+                    case '\\':
+                        converted = true;
+                        return static_cast<C>('\\');
+                    default:
+                        converted = false;
+                        return character;
+                }
+            }
+
+            /**
+             * Un-escape a string
+             *
+             * @param toConvert the string to un-escape
+             * @return the un-escaped string
+             */
+            virtual T unescape_string(const T &toConvert) const {
+                // Create the result string
+                T res;
+
+                // Iterate over the string to convert
+                for (ptrdiff_t i = 0; i < static_cast<signed>(toConvert.size()); i++) {
+                    // Only continue if the current character is a backslash
+                    // and i + 1 is smaller than the size of toConvert
+                    if (toConvert[i] == '\\' && static_cast<size_t>(i + 1) < toConvert.size()) {
+                        bool wasChanged;
+                        const C newVal = unescape_character(toConvert[i + 1], wasChanged);
+
+                        // Get the number of backslashes before this
+                        uint8_t backslashes = 0;
+                        for (int j = i; j >= 0 && toConvert[j] == '\\'; j--) {
+                            backslashes = (backslashes + 1) % 2;
+                        }
+
+                        // Append the un-escaped value to the result and skip adding
+                        // the backslash if the character was un-escapable and the
+                        // number of backslashes before it is uneven
+                        if (wasChanged && backslashes == 1) {
+                            res += newVal;
+                            i++;
+                            continue;
+                        }
+                    }
+
+                    // If continue wasn't called, just add the
+                    // current char to the result string
+                    res += toConvert[i];
+                }
+
+                return res;
+            }
+        };
+    } // namespace util
 
     /**
      * A csv column
      *
      * @tparam T the string type. Must be a std::string or std::wstring
      */
-    template<class T>
+    template<class T, class _escape_generator_ = util::escape_sequence_generator<T>>
     class csvrowcolumn {
     public:
         CSV_CHECK_T_SUPPORTED
@@ -276,14 +517,14 @@ namespace markusjx {
         /**
          * Create an empty column
          */
-        csvrowcolumn(std::nullptr_t) : value() {}
+        csvrowcolumn(std::nullptr_t) : escapeGenerator(), value() {}
 
         /**
          * Create a column from a string value
          *
          * @param val the value
          */
-        csvrowcolumn(const T &val) : value('"' + val + '"') {}
+        csvrowcolumn(const T &val) : escapeGenerator(), value('\"' + escapeGenerator.escape_string(val) + '\"') {}
 
         /**
          * Create a column from a string value. Only available if T = std::wstring
@@ -291,29 +532,28 @@ namespace markusjx {
          * @param val the string to convert
          */
         CSV_REQUIRES(T, std::wstring)
-        csvrowcolumn(const std::string &val) : value(L'"' + util::string_to_wstring(val) + L'"') {}
+        csvrowcolumn(const std::string &val)
+                : escapeGenerator(),
+                  value(L'\"' + escapeGenerator.escape_string(util::string_to_wstring(val)) + L'\"') {}
 
         /**
          * Create a column from a character
          *
          * @param val the character to use
          */
-        csvrowcolumn(char val) : value() {
-            value += '"';
-            value += val;
-            value += '"';
-        }
+        csvrowcolumn(char val)
+                : escapeGenerator(), value(T(1, '\"') + escapeGenerator.escape_string(T(1, val)) + T(1, '\"')) {}
 
         /**
          * Create a column from a char array
          *
          * @param val the char array
          */
-        csvrowcolumn(const char *val) {
+        csvrowcolumn(const char *val) : escapeGenerator() {
             if constexpr (util::is_u8_string_v<T>) {
-                value = '"' + T(val) + '"';
+                value = T('\"' + escapeGenerator.escape_string(T(val)) + '\"');
             } else if constexpr (util::is_u16_string_v<T>) {
-                value = L'"' + util::string_to_wstring(val) + L'"';
+                value = T(L'\"' + escapeGenerator.escape_string(util::string_to_wstring(val)) + L'\"');
             }
         }
 
@@ -323,11 +563,8 @@ namespace markusjx {
          * @param val the char to use
          */
         CSV_REQUIRES(T, std::wstring)
-        csvrowcolumn(wchar_t val) : value() {
-            value += L'"';
-            value += val;
-            value += L'"';
-        }
+        csvrowcolumn(wchar_t val)
+                : escapeGenerator(), value(L'\"' + escapeGenerator.escape_string(T(1, val)) + L'\"') {}
 
         /**
          * Create a column from a wide char array
@@ -335,7 +572,8 @@ namespace markusjx {
          * @param val the char array
          */
         CSV_REQUIRES(T, std::wstring)
-        csvrowcolumn(const wchar_t *val) : value(L'"' + T(val) + L'"') {}
+        csvrowcolumn(const wchar_t *val)
+                : escapeGenerator(), value(L'\"' + escapeGenerator.escape_string(T(val)) + L'\"') {}
 
         /**
          * Create a column from a boolean
@@ -365,7 +603,7 @@ namespace markusjx {
             }
         }
 
-        csvrowcolumn &operator=(const csvrowcolumn<T> &) = default;
+        csvrowcolumn &operator=(const csvrowcolumn<T, _escape_generator_> &) = default;
 
         /**
          * Assign nothing to this column
@@ -373,12 +611,7 @@ namespace markusjx {
          * @return this
          */
         csvrowcolumn &operator=(std::nullptr_t) {
-            if constexpr (util::is_u8_string_v<T>) {
-                value = "";
-            } else if constexpr (util::is_u8_string_v<T>) {
-                value = L"";
-            }
-
+            value = T();
             return *this;
         }
 
@@ -390,9 +623,16 @@ namespace markusjx {
          */
         csvrowcolumn &operator=(const T &val) {
             value = T();
-            value += '"';
-            value += val;
-            value += '"';
+            if constexpr (util::is_u8_string_v<T>) {
+                value += '\"';
+                value += escapeGenerator.escape_string(val);
+                value += '\"';
+            } else if constexpr (util::is_u16_string_v<T>) {
+                value += L'\"';
+                value += escapeGenerator.escape_string(val);
+                value += L'\"';
+            }
+
             return *this;
         }
 
@@ -403,11 +643,8 @@ namespace markusjx {
          * @return this
          */
         csvrowcolumn &operator=(const char *val) {
-            if constexpr (util::is_u8_string_v<T>) {
-                value = '"' + T(val) + '"';
-            } else if constexpr (util::is_u16_string_v<T>) {
-                value = L'"' + util::string_to_wstring(val) + L'"';
-            }
+            value = T(T(1, '\"') + escapeGenerator.escape_string(util::string_as<T>(std::string(val))) + T(1, '\"'));
+
             return *this;
         }
 
@@ -419,7 +656,7 @@ namespace markusjx {
          */
         CSV_REQUIRES(T, std::wstring)
         csvrowcolumn &operator=(const wchar_t *val) {
-            value = L'"' + T(val) + L'"';
+            value = L'"' + escapeGenerator.escape_string(T(val)) + L'"';
             return *this;
         }
 
@@ -446,10 +683,7 @@ namespace markusjx {
          * @return this
          */
         csvrowcolumn &operator=(char val) {
-            value = T();
-            value += '"';
-            value += val;
-            value += '"';
+            value = T('\"' + escapeGenerator.escape_string(T(1, val)) + '\"');
             return *this;
         }
 
@@ -461,10 +695,7 @@ namespace markusjx {
          */
         CSV_REQUIRES(T, std::wstring)
         csvrowcolumn &operator=(wchar_t val) {
-            value = T();
-            value += L'"';
-            value += val;
-            value += L'"';
+            value = T(L'\"' + escapeGenerator.escape_string(T(1, val)) + L'\"');
             return *this;
         }
 
@@ -476,7 +707,7 @@ namespace markusjx {
          */
         CSV_REQUIRES(T, std::wstring)
         csvrowcolumn &operator=(const std::string &val) {
-            value = L'"' + util::string_to_wstring(val) + L'"';
+            value = T(L'\"' + escapeGenerator.escape_string(util::string_to_wstring(val)) + L'\"');
             return *this;
         }
 
@@ -514,9 +745,9 @@ namespace markusjx {
          */
         CSV_NODISCARD operator T() const {
             if (value[0] == '"') {
-                return value.substr(1, value.size() - 2);
+                return escapeGenerator.unescape_string(value.substr(1, value.size() - 2));
             } else {
-                throw std::runtime_error("The stored value is not a string");
+                throw exceptions::conversion_error("The stored value is not a string");
             }
         }
 
@@ -532,7 +763,7 @@ namespace markusjx {
             if (val.size() == 1) {
                 return val[0];
             } else {
-                throw std::runtime_error("The value is not a character");
+                throw exceptions::conversion_error("The value is not a character");
             }
         }
 
@@ -548,7 +779,7 @@ namespace markusjx {
             if (val.size() == 1) {
                 return val[0];
             } else {
-                throw std::runtime_error("The value is not a character");
+                throw exceptions::conversion_error("The value is not a character");
             }
         }
 
@@ -933,7 +1164,7 @@ namespace markusjx {
             } else if (this->isNumber() && val.isNumber()) {
                 return csvrowcolumn(this->as<long long>() - val.as<long long>());
             } else {
-                throw std::runtime_error("The value is not a number");
+                throw exceptions::conversion_error("The value is not a number");
             }
         }
 
@@ -976,7 +1207,7 @@ namespace markusjx {
             } else if (this->isNumber() && val.isNumber()) {
                 return csvrowcolumn(this->as<long long>() * val.as<long long>());
             } else {
-                throw std::runtime_error("The value is not a number");
+                throw exceptions::conversion_error("The value is not a number");
             }
         }
 
@@ -1019,7 +1250,7 @@ namespace markusjx {
             } else if (this->isNumber() && val.isNumber()) {
                 return csvrowcolumn(this->as<long long>() / val.as<long long>());
             } else {
-                throw std::runtime_error("The value is not a number");
+                throw exceptions::conversion_error("The value is not a number");
             }
         }
 
@@ -1105,9 +1336,11 @@ namespace markusjx {
             } else if (val == false_val) {
                 return false;
             } else {
-                throw std::runtime_error("Could not convert the value");
+                throw exceptions::conversion_error("Could not convert the value");
             }
         }
+
+        _escape_generator_ escapeGenerator;
 
         // The string value stored in this column
         T value;
@@ -2456,7 +2689,7 @@ namespace markusjx {
          */
         const_csv_file_row at(uint64_t line) const {
             if (line > getMaxLineIndex()) {
-                throw std::runtime_error("The requested line index does not exist");
+                throw exceptions::index_out_of_range_error("The requested line index does not exist");
             }
 
             translateLine(line);
@@ -2535,7 +2768,7 @@ namespace markusjx {
          */
         void remove(uint64_t index) {
             if (index > getMaxLineIndex()) {
-                throw std::runtime_error("The requested index is out of range");
+                throw exceptions::index_out_of_range_error("The requested index is out of range");
             }
 
             // Translate the index

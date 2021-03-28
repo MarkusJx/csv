@@ -18,6 +18,55 @@
                 o << csv;\
                 o.close()
 
+const int numValues = 10000;
+
+class UnescapeTest : public ::testing::Test {
+protected:
+    // Source: https://stackoverflow.com/a/24586587
+    static std::string getRandomString(std::string::size_type length) {
+        static auto &chrs = "0123456789\n\t\"\\\a\b"
+                            "abcdefghijklmnopqrstuvwxyz"
+                            "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+        thread_local static std::mt19937 rg{std::random_device{}()};
+        thread_local static std::uniform_int_distribution<std::string::size_type> pick(0, sizeof(chrs) - 2);
+
+        std::string s;
+        s.reserve(length);
+
+        while (length--)
+            s += chrs[pick(rg)];
+
+        return s;
+    }
+};
+
+TEST_F(UnescapeTest, unescapeTest) {
+    markusjx::util::escape_sequence_generator<std::string> gen;
+
+    const std::string s = "\\\n\"abc\a\tdef\\\t;";
+    const std::string escaped = gen.escape_string(s);
+
+    EXPECT_NE(s, escaped);
+
+    const std::string unescaped = gen.unescape_string(escaped);
+    EXPECT_EQ(s, unescaped);
+}
+
+TEST_F(UnescapeTest, randomUnescapeTest) {
+    markusjx::util::escape_sequence_generator<std::string> gen;
+
+    for (int i = 0; i < numValues; i++) {
+        const std::string s = getRandomString(400);
+        const std::string escaped = gen.escape_string(s);
+
+        EXPECT_NE(s, escaped);
+
+        const std::string unescaped = gen.unescape_string(escaped);
+        EXPECT_EQ(s, unescaped);
+    }
+}
+
 class CSVTestBase : public ::testing::Test {
 protected:
     CSVTestBase()
@@ -61,8 +110,6 @@ private:
     std::uniform_real_distribution<double> double_dist;
     std::uniform_int_distribution<int> bool_dist;
 };
-
-const int numValues = 10000;
 
 class CSVTest : public CSVTestBase {
 protected:
@@ -119,7 +166,7 @@ markusjx::csv CSVTest::csv;
 
 TEST_F(CSVTest, emptyCheck) {
     ASSERT_TRUE(csv.empty());
-    ASSERT_EQ(csv.size(), 0);
+    ASSERT_EQ(csv.size(), static_cast<size_t>(0));
     ASSERT_EQ(csv.numElements(), 0);
 }
 
