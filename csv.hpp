@@ -179,7 +179,7 @@ namespace markusjx {
         inline constexpr bool is_u16_string_v = is_any_of_v<T, std::wstring>;
 
         template<class T>
-        using std__basic_string = std::basic_string<T, std::char_traits<T>, std::allocator<T>>;
+        using std_basic_string = std::basic_string<T, std::char_traits<T>, std::allocator<T>>;
 
         /**
          * Split a string.
@@ -1823,7 +1823,7 @@ namespace markusjx {
      *
      * @tparam T the char type of the file
      */
-    template<class T, class _escape_generator_ = util::escape_sequence_generator<util::std__basic_string<T>>>
+    template<class T, class _escape_generator_ = util::escape_sequence_generator<util::std_basic_string<T>>>
     class basic_csv_file;
 
     /**
@@ -3178,12 +3178,12 @@ namespace markusjx {
     /**
      * A utf-8 csv file
      */
-    using csv_file = basic_csv_file<char, util::escape_sequence_generator<util::std__basic_string<char>>>;
+    using csv_file = basic_csv_file<char, util::escape_sequence_generator<util::std_basic_string<char>>>;
 
     /**
      * A utf-16 csv file
      */
-    using w_csv_file = basic_csv_file<wchar_t, util::escape_sequence_generator<util::std__basic_string<wchar_t>>>;
+    using w_csv_file = basic_csv_file<wchar_t, util::escape_sequence_generator<util::std_basic_string<wchar_t>>>;
 }
 
 // Undefine everything

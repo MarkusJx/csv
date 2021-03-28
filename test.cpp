@@ -20,11 +20,26 @@
 
 const int numValues = 10000;
 
-class UnescapeTest : public ::testing::Test {
+class CSVTestBase : public ::testing::Test {
 protected:
+    CSVTestBase()
+            : r(), e1(r()), int_dist(-10000000, 10000000), double_dist(-10000000.0, 10000000.0), bool_dist(0, 1) {};
+
+    bool getRandomBool() {
+        return bool_dist(e1);
+    }
+
+    int getRandomInt() {
+        return int_dist(e1);
+    }
+
+    double getRandomDouble() {
+        return double_dist(e1);
+    }
+
     // Source: https://stackoverflow.com/a/24586587
     static std::string getRandomString(std::string::size_type length) {
-        static auto &chrs = "0123456789\n\t\"\\\a\b"
+        static auto &chrs = "0123456789\\\n\t\a\b;"
                             "abcdefghijklmnopqrstuvwxyz"
                             "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
@@ -39,6 +54,17 @@ protected:
 
         return s;
     }
+
+private:
+    std::random_device r;
+    std::default_random_engine e1;
+
+    std::uniform_int_distribution<int> int_dist;
+    std::uniform_real_distribution<double> double_dist;
+    std::uniform_int_distribution<int> bool_dist;
+};
+
+class UnescapeTest : public CSVTestBase {
 };
 
 TEST_F(UnescapeTest, unescapeTest) {
@@ -67,49 +93,22 @@ TEST_F(UnescapeTest, randomUnescapeTest) {
     }
 }
 
-class CSVTestBase : public ::testing::Test {
-protected:
-    CSVTestBase()
-            : r(), e1(r()), int_dist(-10000000, 10000000), double_dist(-10000000.0, 10000000.0), bool_dist(0, 1) {};
+TEST_F(UnescapeTest, csvEscapeTest) {
+    markusjx::csv csv({"ab;", "de\n", "fg\t", "hi;"});
 
-    bool getRandomBool() {
-        return bool_dist(e1);
+    EXPECT_EQ(csv, markusjx::csv::parse(csv.to_string()));
+}
+
+TEST_F(UnescapeTest, csvRandomEscapeTest) {
+    for (int x = 0; x < 1000; x++) {
+        markusjx::csv csv;
+        for (int i = 0; i < 100; i++) {
+            csv << getRandomString(100);
+        }
+
+        EXPECT_EQ(csv, markusjx::csv::parse(csv.to_string()));
     }
-
-    int getRandomInt() {
-        return int_dist(e1);
-    }
-
-    double getRandomDouble() {
-        return double_dist(e1);
-    }
-
-    // Source: https://stackoverflow.com/a/24586587
-    static std::string getRandomString(std::string::size_type length) {
-        static auto &chrs = "0123456789"
-                            "abcdefghijklmnopqrstuvwxyz"
-                            "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-        thread_local static std::mt19937 rg{std::random_device{}()};
-        thread_local static std::uniform_int_distribution<std::string::size_type> pick(0, sizeof(chrs) - 2);
-
-        std::string s;
-        s.reserve(length);
-
-        while (length--)
-            s += chrs[pick(rg)];
-
-        return s;
-    }
-
-private:
-    std::random_device r;
-    std::default_random_engine e1;
-
-    std::uniform_int_distribution<int> int_dist;
-    std::uniform_real_distribution<double> double_dist;
-    std::uniform_int_distribution<int> bool_dist;
-};
+}
 
 class CSVTest : public CSVTestBase {
 protected:
@@ -219,8 +218,8 @@ TEST_F(ConstructorTest, fromVectorTest) {
 }
 
 TEST_F(ConstructorTest, fromInitializerListTest) {
-    markusjx::csv csv = {{"abc", 1,  5,    'd',   false},
-                         {25,    42, true, "def", nullptr, "ye"}};
+    markusjx::csv csv = {{"abc;", 1,  5,    'd',   false},
+                         {25,    42, true, "def\n", nullptr, "ye"}};
     EXPECT_EQ(csv.numElements(), static_cast<uint64_t>(11));
 }
 
