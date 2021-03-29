@@ -178,65 +178,13 @@ namespace markusjx {
         template<class T>
         inline constexpr bool is_u16_string_v = is_any_of_v<T, std::wstring>;
 
-        template<class T>
-        using std_basic_string = std::basic_string<T, std::char_traits<T>, std::allocator<T>>;
-
         /**
-         * Split a string.
-         * Source: https://stackoverflow.com/a/37454181
+         * An alias for std::basic_string
          *
-         * @tparam T the string type
-         * @param str the string to split
-         * @param delimiter the delimiter
-         * @return the string elements
+         * @tparam T the type of the string
          */
         template<class T>
-        inline std::vector<T> splitString(const T &str, char delimiter) {
-            std::vector<T> tokens;
-            size_t prev = 0, pos;
-            do {
-                bool isString = str[prev] == '\"';
-
-                // Set the string offset to prev
-                size_t str_offset = prev;
-                if (isString) {
-                    // The number of backslashes
-                    short backslashes = 0;
-                    for (size_t i = prev + 1; i < str.length(); i++) {
-                        // If the current character is a backslash, increase backslashes
-                        if (str[i] == '\\') {
-                            backslashes = (backslashes + 1) % 2;
-                        } else {
-                            // If the current character is a quotation mark and
-                            // the number of backslashes in front of it is even,
-                            // set the string offset to i as the end of the string
-                            // is found and stop the loop.
-                            if (str[i] == '\"' && backslashes == 0) {
-                                str_offset = i;
-                                isString = false;
-                                break;
-                            } else {
-                                // The character is not a backslash, reset the backslash counter
-                                backslashes = 0;
-                            }
-                        }
-                    }
-                }
-
-                // If isString is still true, the string did
-                // never end, therefore the input is malformed
-                if (isString) {
-                    throw exceptions::parse_error("Missing quotation mark at the end of the string");
-                }
-
-                pos = str.find(delimiter, str_offset);
-                if (pos == T::npos) pos = str.length();
-                T token = str.substr(prev, pos - prev);
-                tokens.push_back(token);
-                prev = pos + 1;
-            } while (pos < str.length() && prev < str.length());
-            return tokens;
-        }
+        using std_basic_string = std::basic_string<T, std::char_traits<T>, std::allocator<T>>;
 
         /**
          * Convert a string to a number. Alternative version
@@ -357,7 +305,16 @@ namespace markusjx {
             }
         }
 
-        template<class T, class C = typename T::value_type>
+        /**
+         * The default escape sequence generator.
+         * This implementation enforces the rules
+         * defined in RFC 4180.
+         *
+         * @tparam T the string type
+         * @tparam Sep the separator to use
+         * @tparam C the character type
+         */
+        template<class T, char Sep = ';', class C = typename T::value_type>
         class escape_sequence_generator {
         public:
             CSV_CHECK_T_SUPPORTED
@@ -370,24 +327,8 @@ namespace markusjx {
              */
             virtual T escape_character(C character) const {
                 switch (character) {
-                    case '\a':
-                        return string_as<T>(std::string("\\a"));
-                    case '\b':
-                        return string_as<T>(std::string("\\b"));
-                    case '\f':
-                        return string_as<T>(std::string("\\f"));
-                    case '\n':
-                        return string_as<T>(std::string("\\n"));
-                    case '\r':
-                        return string_as<T>(std::string("\\r"));
-                    case '\t':
-                        return string_as<T>(std::string("\\t"));
-                    case '\v':
-                        return string_as<T>(std::string("\\v"));
                     case '\"':
-                        return string_as<T>(std::string("\\\""));
-                    case '\\':
-                        return string_as<T>(std::string("\\\\"));
+                        return string_as<T>(std::string("\"\""));
                     default:
                         return T(1, character);
                 }
@@ -396,16 +337,27 @@ namespace markusjx {
             /**
              * Escape a string
              *
-             * @param toConvert the string to escape
+             * @param str the string to escape
+             * @param delimiter the delimiter used in the csv file
              * @return the escaped string
              */
-            virtual T escape_string(const T &toConvert) const {
-                T res;
-                for (const C character : toConvert) {
-                    res.append(escape_character(character));
-                }
+            virtual T escape_string(const T &str) const {
+                // Prepend and append a double quote to the
+                // string if it contains a new line, a double
+                // quote or a separator (RFC 4180 section 2.6)
+                if (str.find('\n') != T::npos || str.find('\"') != T::npos || str.find(Sep) != T::npos) {
+                    T res;
 
-                return res;
+                    res += '\"';
+                    for (const C character : str) {
+                        res.append(escape_character(character));
+                    }
+                    res += '\"';
+
+                    return res;
+                } else {
+                    return str;
+                }
             }
 
             /**
@@ -417,33 +369,9 @@ namespace markusjx {
              */
             virtual C unescape_character(C character, bool &converted) const {
                 switch (character) {
-                    case 'a':
-                        converted = true;
-                        return static_cast<C>('\a');
-                    case 'b':
-                        converted = true;
-                        return static_cast<C>('\b');
-                    case 'f':
-                        converted = true;
-                        return static_cast<C>('\f');
-                    case 'n':
-                        converted = true;
-                        return static_cast<C>('\n');
-                    case 'r':
-                        converted = true;
-                        return static_cast<C>('\r');
-                    case 't':
-                        converted = true;
-                        return static_cast<C>('\t');
-                    case 'v':
-                        converted = true;
-                        return static_cast<C>('\v');
                     case '\"':
                         converted = true;
                         return static_cast<C>('\"');
-                    case '\\':
-                        converted = true;
-                        return static_cast<C>('\\');
                     default:
                         converted = false;
                         return character;
@@ -454,43 +382,120 @@ namespace markusjx {
              * Un-escape a string
              *
              * @param toConvert the string to un-escape
+             * @param only_quotes_tm whether to only remove leading and trailing quotes if present
              * @return the un-escaped string
              */
-            virtual T unescape_string(const T &toConvert) const {
-                // Create the result string
-                T res;
+            virtual T unescape_string(T toConvert, bool only_quotes_tm) const {
+                if (only_quotes_tm) {
+                    if (toConvert.size() >= 2 && toConvert[0] == '\"' && toConvert[toConvert.size() - 1] == '\"') {
+                        return toConvert.substr(1, toConvert.size() - 2);
+                    } else {
+                        return toConvert;
+                    }
+                } else {
+                    // Create the result string
+                    T res;
 
-                // Iterate over the string to convert.
-                // Use ptrdiff_t as type as it is the signed counterpart to size_t.
-                for (ptrdiff_t i = 0; i < static_cast<signed>(toConvert.size()); i++) {
-                    // Only continue if the current character is a backslash
-                    // and i + 1 is smaller than the size of toConvert
-                    if (toConvert[i] == '\\' && static_cast<size_t>(i + 1) < toConvert.size()) {
-                        bool wasChanged;
-                        const C newVal = unescape_character(toConvert[i + 1], wasChanged);
-
-                        // Get the number of backslashes before this
-                        uint8_t backslashes = 0;
-                        for (ptrdiff_t j = i; j >= 0 && toConvert[j] == '\\'; j--) {
-                            backslashes = (backslashes + 1) % 2;
-                        }
-
-                        // Append the un-escaped value to the result and skip adding
-                        // the backslash if the character was un-escapable and the
-                        // number of backslashes before it is uneven
-                        if (wasChanged && backslashes == 1) {
-                            res += newVal;
-                            i++;
-                            continue;
-                        }
+                    if (toConvert.size() >= 2 && toConvert[0] == '\"' && toConvert[toConvert.size() - 1] == '\"') {
+                        toConvert = toConvert.substr(1, toConvert.size() - 2);
                     }
 
-                    // If continue wasn't called, just add the
-                    // current char to the result string
-                    res += toConvert[i];
+                    // Iterate over the string to convert.
+                    // Use ptrdiff_t as type as it is the signed counterpart to size_t.
+                    for (ptrdiff_t i = 0; i < static_cast<signed>(toConvert.size()); i++) {
+                        // Only continue if the current character is a double quote
+                        // and i + 1 is smaller than the size of toConvert
+                        if (toConvert[i] == '\"' && static_cast<size_t>(i + 1) < toConvert.size()) {
+                            bool wasChanged;
+                            const C newVal = unescape_character(toConvert[i + 1], wasChanged);
+
+                            // Append the un-escaped value to the result
+                            // if the character was un-escapable
+                            if (wasChanged) {
+                                res += newVal;
+                                i++;
+                                continue;
+                            }
+                        }
+
+                        // If continue wasn't called, just add the
+                        // current char to the result string
+                        res += toConvert[i];
+                    }
+
+                    return res;
+                }
+            }
+
+            /**
+             * Find a delimiter in a string.
+             * Returns T::npos if the delimiter was not found.
+             *
+             * @param str the string to find the position of the next delimiter in
+             * @param offset the offset to start with
+             * @param delimiter the delimiter to search for
+             * @return the position of the delimiter in str
+             */
+            virtual size_t find(const T &str, size_t offset, char delimiter) const {
+                // The number of double quotes
+                short doubleQuotes = 0;
+                for (size_t pos = offset; pos < str.length(); pos++) {
+                    // If the current character is a
+                    // double quote, increase doubleQuotes
+                    if (str[pos] == '\"') {
+                        doubleQuotes = (doubleQuotes + 1) % 2;
+                    } else if (str[pos] == delimiter && doubleQuotes == 0) {
+                        // If the string at pos is the delimiter and the
+                        // number of double quotes in the last section
+                        // is even, return the position of the delimiter.
+                        return pos;
+                    }
+
+                    // Note: A valid string must contain an even number
+                    // of double quotes to be properly formatted: Each
+                    // double quote must be escaped by another double
+                    // quote (RFC 4180 section 2.7) and if there are
+                    // double quotes in a string, the whole string should
+                    // be enclosed in double quotes (RFC 4180 section 2.6).
                 }
 
-                return res;
+                // The number of double quotes must be even, if not, the csv string is malformed
+                if (doubleQuotes != 0) {
+                    throw exceptions::parse_error("Missing quotation mark at the end of the string");
+                } else {
+                    return T::npos;
+                }
+            }
+
+            /**
+             * Split a string by a delimiter
+             *
+             * @param str the string to split
+             * @param delimiter the delimiter to split the string by
+             * @return the string parts extracted from the string
+             */
+            virtual std::vector<T> splitString(const T &str, char delimiter) const {
+                // This implementation is based on this: https://stackoverflow.com/a/37454181
+                std::vector<T> tokens;
+                size_t pos, prev = 0;
+                do {
+                    pos = find(str, prev, delimiter);
+                    if (pos == T::npos) pos = str.length();
+                    T token = str.substr(prev, pos - prev);
+                    tokens.push_back(token);
+                    prev = pos + 1;
+                } while (pos < str.length() && prev < str.length());
+
+                // If the string ends with the delimiter character and isn't
+                // empty, add another instance of T to the result vector.
+                // This is mostly in here because a line must not end with a
+                // separator (RFC 4180 section 2.4). So if it ends with a
+                // separator, there must be another, empty cell behind that separator.
+                if (!str.empty() && str[str.size() - 1] == delimiter) {
+                    tokens.push_back(T());
+                }
+
+                return tokens;
             }
         };
     } // namespace util
@@ -499,11 +504,20 @@ namespace markusjx {
      * A csv column
      *
      * @tparam T the string type. Must be a std::string or std::wstring
+     * @tparam Sep the separator to use
+     * @tparam _escape_generator_ the escape sequence generator to use
      */
-    template<class T, class _escape_generator_ = util::escape_sequence_generator<T>>
-    class csvrowcolumn {
+    template<class T, char Sep = ';', class _escape_generator_ = util::escape_sequence_generator<T, Sep>>
+    class csv_cell {
     public:
         CSV_CHECK_T_SUPPORTED
+        static_assert(std::is_base_of_v<util::escape_sequence_generator<T, Sep>, _escape_generator_>,
+                      "Template parameter _escape_generator_ must extend markusjx::util::escape_sequence_generator");
+
+        /**
+         * The string type
+         */
+        using string_type = T;
 
         /**
          * Parse a column value
@@ -511,8 +525,8 @@ namespace markusjx {
          * @param value the string value to parse
          * @return the parsed column
          */
-        static csvrowcolumn<T, _escape_generator_> parse(const T &value) {
-            csvrowcolumn<T, _escape_generator_> col(nullptr);
+        static csv_cell<T, Sep, _escape_generator_> parse(const T &value) {
+            csv_cell<T, Sep, _escape_generator_> col(nullptr);
             col.value = value;
 
             return col;
@@ -521,14 +535,14 @@ namespace markusjx {
         /**
          * Create an empty column
          */
-        csvrowcolumn(std::nullptr_t) : escapeGenerator(), value() {}
+        csv_cell(std::nullptr_t) : escapeGenerator(), value() {}
 
         /**
          * Create a column from a string value
          *
          * @param val the value
          */
-        csvrowcolumn(const T &val) : escapeGenerator(), value('\"' + escapeGenerator.escape_string(val) + '\"') {}
+        csv_cell(const T &val) : escapeGenerator(), value(escapeGenerator.escape_string(val)) {}
 
         /**
          * Create a column from a string value. Only available if T = std::wstring
@@ -536,28 +550,26 @@ namespace markusjx {
          * @param val the string to convert
          */
         CSV_REQUIRES(T, std::wstring)
-        csvrowcolumn(const std::string &val)
-                : escapeGenerator(),
-                  value(L'\"' + escapeGenerator.escape_string(util::string_to_wstring(val)) + L'\"') {}
+        csv_cell(const std::string &val)
+                : escapeGenerator(), value(escapeGenerator.escape_string(util::string_to_wstring(val))) {}
 
         /**
          * Create a column from a character
          *
          * @param val the character to use
          */
-        csvrowcolumn(char val)
-                : escapeGenerator(), value(T(1, '\"') + escapeGenerator.escape_string(T(1, val)) + T(1, '\"')) {}
+        csv_cell(char val) : escapeGenerator(), value(escapeGenerator.escape_string(T(1, val))) {}
 
         /**
          * Create a column from a char array
          *
          * @param val the char array
          */
-        csvrowcolumn(const char *val) : escapeGenerator() {
+        csv_cell(const char *val) : escapeGenerator() {
             if constexpr (util::is_u8_string_v<T>) {
-                value = T('\"' + escapeGenerator.escape_string(T(val)) + '\"');
+                value = escapeGenerator.escape_string(T(val));
             } else if constexpr (util::is_u16_string_v<T>) {
-                value = T(L'\"' + escapeGenerator.escape_string(util::string_to_wstring(val)) + L'\"');
+                value = escapeGenerator.escape_string(util::string_to_wstring(val));
             }
         }
 
@@ -567,8 +579,7 @@ namespace markusjx {
          * @param val the char to use
          */
         CSV_REQUIRES(T, std::wstring)
-        csvrowcolumn(wchar_t val)
-                : escapeGenerator(), value(L'\"' + escapeGenerator.escape_string(T(1, val)) + L'\"') {}
+        csv_cell(wchar_t val) : escapeGenerator(), value(escapeGenerator.escape_string(T(1, val))) {}
 
         /**
          * Create a column from a wide char array
@@ -576,15 +587,14 @@ namespace markusjx {
          * @param val the char array
          */
         CSV_REQUIRES(T, std::wstring)
-        csvrowcolumn(const wchar_t *val)
-                : escapeGenerator(), value(L'\"' + escapeGenerator.escape_string(T(val)) + L'\"') {}
+        csv_cell(const wchar_t *val) : escapeGenerator(), value(escapeGenerator.escape_string(T(val))) {}
 
         /**
          * Create a column from a boolean
          *
          * @param val the bool
          */
-        csvrowcolumn(bool val) {
+        csv_cell(bool val) {
             if constexpr (util::is_u8_string_v<T>) {
                 value = T(val ? "true" : "false");
             } else if constexpr (util::is_u16_string_v<T>) {
@@ -599,7 +609,7 @@ namespace markusjx {
          * @param val the value
          */
         template<class U>
-        csvrowcolumn(const U &val) {
+        csv_cell(const U &val) {
             if constexpr (util::is_u8_string_v<T>) {
                 value = std::to_string(val);
             } else if constexpr (util::is_u16_string_v<T>) {
@@ -607,14 +617,14 @@ namespace markusjx {
             }
         }
 
-        csvrowcolumn &operator=(const csvrowcolumn<T, _escape_generator_> &) = default;
+        csv_cell &operator=(const csv_cell<T, Sep, _escape_generator_> &) = default;
 
         /**
          * Assign nothing to this column
          *
          * @return this
          */
-        csvrowcolumn &operator=(std::nullptr_t) {
+        csv_cell &operator=(std::nullptr_t) {
             value = T();
             return *this;
         }
@@ -625,16 +635,11 @@ namespace markusjx {
          * @param val the value to assign
          * @return this
          */
-        csvrowcolumn &operator=(const T &val) {
-            value = T();
+        csv_cell &operator=(const T &val) {
             if constexpr (util::is_u8_string_v<T>) {
-                value += '\"';
-                value += escapeGenerator.escape_string(val);
-                value += '\"';
+                value = escapeGenerator.escape_string(val);
             } else if constexpr (util::is_u16_string_v<T>) {
-                value += L'\"';
-                value += escapeGenerator.escape_string(val);
-                value += L'\"';
+                value = escapeGenerator.escape_string(val);
             }
 
             return *this;
@@ -646,8 +651,8 @@ namespace markusjx {
          * @param val the array
          * @return this
          */
-        csvrowcolumn &operator=(const char *val) {
-            value = T(T(1, '\"') + escapeGenerator.escape_string(util::string_as<T>(std::string(val))) + T(1, '\"'));
+        csv_cell &operator=(const char *val) {
+            value = escapeGenerator.escape_string(util::string_as<T>(std::string(val)));
 
             return *this;
         }
@@ -659,8 +664,8 @@ namespace markusjx {
          * @return this
          */
         CSV_REQUIRES(T, std::wstring)
-        csvrowcolumn &operator=(const wchar_t *val) {
-            value = L'"' + escapeGenerator.escape_string(T(val)) + L'"';
+        csv_cell &operator=(const wchar_t *val) {
+            value = escapeGenerator.escape_string(T(val));
             return *this;
         }
 
@@ -670,7 +675,7 @@ namespace markusjx {
          * @param val the value to assign
          * @return this
          */
-        csvrowcolumn &operator=(bool val) {
+        csv_cell &operator=(bool val) {
             if constexpr (util::is_u8_string_v<T>) {
                 value = std::string(val ? "true" : "false");
             } else if constexpr (util::is_u16_string_v<T>) {
@@ -686,8 +691,8 @@ namespace markusjx {
          * @param val the character to assign
          * @return this
          */
-        csvrowcolumn &operator=(char val) {
-            value = T('\"' + escapeGenerator.escape_string(T(1, val)) + '\"');
+        csv_cell &operator=(char val) {
+            value = escapeGenerator.escape_string(T(1, val));
             return *this;
         }
 
@@ -698,8 +703,8 @@ namespace markusjx {
          * @return this
          */
         CSV_REQUIRES(T, std::wstring)
-        csvrowcolumn &operator=(wchar_t val) {
-            value = T(L'\"' + escapeGenerator.escape_string(T(1, val)) + L'\"');
+        csv_cell &operator=(wchar_t val) {
+            value = escapeGenerator.escape_string(T(1, val));
             return *this;
         }
 
@@ -710,8 +715,8 @@ namespace markusjx {
          * @return this
          */
         CSV_REQUIRES(T, std::wstring)
-        csvrowcolumn &operator=(const std::string &val) {
-            value = T(L'\"' + escapeGenerator.escape_string(util::string_to_wstring(val)) + L'\"');
+        csv_cell &operator=(const std::string &val) {
+            value = escapeGenerator.escape_string(util::string_to_wstring(val));
             return *this;
         }
 
@@ -723,7 +728,7 @@ namespace markusjx {
          * @return this
          */
         template<class U>
-        csvrowcolumn &operator=(const U &val) {
+        csv_cell &operator=(const U &val) {
             if constexpr (util::is_u8_string_v<T>) {
                 value = std::to_string(val);
             } else if constexpr (util::is_u16_string_v<T>) {
@@ -731,6 +736,15 @@ namespace markusjx {
             }
 
             return *this;
+        }
+
+        /**
+         * Set the raw value
+         *
+         * @param val the new raw value
+         */
+        void setRawValue(const T &val) {
+            this->value = val;
         }
 
         /**
@@ -748,11 +762,7 @@ namespace markusjx {
          * @return the string
          */
         CSV_NODISCARD operator T() const {
-            if (value[0] == '"') {
-                return escapeGenerator.unescape_string(value.substr(1, value.size() - 2));
-            } else {
-                throw exceptions::conversion_error("The stored value is not a string");
-            }
+            return escapeGenerator.unescape_string(value, false);
         }
 
         /**
@@ -793,7 +803,11 @@ namespace markusjx {
          * @return the integer
          */
         CSV_NODISCARD operator int() const {
-            return util::stringToNumber<int>(value, std::stoi);
+            if (isNumber()) {
+                return util::stringToNumber<int>(escapeGenerator.unescape_string(value, true), std::stoi);
+            } else {
+                throw exceptions::conversion_error("The value is not a number");
+            }
         }
 
         /**
@@ -802,7 +816,11 @@ namespace markusjx {
          * @return this as a long value
          */
         CSV_NODISCARD operator long() const {
-            return util::stringToNumber<long>(value, std::stol);
+            if (isNumber()) {
+                return util::stringToNumber<long>(escapeGenerator.unescape_string(value, true), std::stol);
+            } else {
+                throw exceptions::conversion_error("The value is not a number");
+            }
         }
 
         /**
@@ -811,7 +829,11 @@ namespace markusjx {
          * @return this as a unsigned long
          */
         CSV_NODISCARD operator unsigned long() const {
-            return util::stringToNumber<unsigned long>(value, std::stoul);
+            if (isNumber()) {
+                return util::stringToNumber<unsigned long>(escapeGenerator.unescape_string(value, true), std::stoul);
+            } else {
+                throw exceptions::conversion_error("The value is not a number");
+            }
         }
 
         /**
@@ -820,7 +842,11 @@ namespace markusjx {
          * @return this as a long long
          */
         CSV_NODISCARD operator long long() const {
-            return util::stringToNumber<long long>(value, std::stoll);
+            if (isNumber()) {
+                return util::stringToNumber<long long>(escapeGenerator.unescape_string(value, true), std::stoll);
+            } else {
+                throw exceptions::conversion_error("The value is not a number");
+            }
         }
 
         /**
@@ -829,7 +855,12 @@ namespace markusjx {
          * @return this as a unsigned long long
          */
         CSV_NODISCARD operator unsigned long long() const {
-            return util::stringToNumber<unsigned long long>(value, std::stoull);
+            if (isNumber()) {
+                return util::stringToNumber<unsigned long long>(escapeGenerator.unescape_string(value, true),
+                                                                std::stoull);
+            } else {
+                throw exceptions::conversion_error("The value is not a number");
+            }
         }
 
         /**
@@ -838,7 +869,11 @@ namespace markusjx {
          * @return this as a double
          */
         CSV_NODISCARD operator double() const {
-            return util::stringToNumberAlt<double>(value, std::stod);
+            if (isNumber()) {
+                return util::stringToNumberAlt<double>(escapeGenerator.unescape_string(value, true), std::stod);
+            } else {
+                throw exceptions::conversion_error("The value is not a number");
+            }
         }
 
         /**
@@ -847,7 +882,11 @@ namespace markusjx {
          * @return this as a long double
          */
         CSV_NODISCARD operator long double() const {
-            return util::stringToNumberAlt<long double>(value, std::stold);
+            if (isNumber()) {
+                return util::stringToNumberAlt<long double>(escapeGenerator.unescape_string(value, true), std::stold);
+            } else {
+                throw exceptions::conversion_error("The value is not a number");
+            }
         }
 
         /**
@@ -856,7 +895,11 @@ namespace markusjx {
          * @return this as a float
          */
         CSV_NODISCARD operator float() const {
-            return util::stringToNumberAlt<float>(value, std::stof);
+            if (isNumber()) {
+                return util::stringToNumberAlt<float>(escapeGenerator.unescape_string(value, true), std::stof);
+            } else {
+                throw exceptions::conversion_error("The value is not a number");
+            }
         }
 
         /**
@@ -866,9 +909,9 @@ namespace markusjx {
          */
         CSV_NODISCARD operator bool() const {
             if constexpr (util::is_u8_string_v<T>) {
-                return op_bool_impl(value, "true", "false");
+                return op_bool_impl(escapeGenerator.unescape_string(value, true), "true", "false");
             } else if constexpr (util::is_u16_string_v<T>) {
-                return op_bool_impl(value, L"true", L"false");
+                return op_bool_impl(escapeGenerator.unescape_string(value, true), L"true", L"false");
             }
         }
 
@@ -913,7 +956,7 @@ namespace markusjx {
          * @param other the column to compare with
          * @return true if the columns match
          */
-        CSV_NODISCARD bool operator==(const csvrowcolumn<T, _escape_generator_> &other) const {
+        CSV_NODISCARD bool operator==(const csv_cell<T, Sep, _escape_generator_> &other) const {
             if (this == &other) {
                 return true;
             } else {
@@ -927,7 +970,7 @@ namespace markusjx {
          * @param other the column to compare with
          * @return true if the columns do not match
          */
-        CSV_NODISCARD bool operator!=(const csvrowcolumn<T, _escape_generator_> &other) const {
+        CSV_NODISCARD bool operator!=(const csv_cell<T, Sep, _escape_generator_> &other) const {
             if (this == &other) {
                 return false;
             } else {
@@ -941,7 +984,7 @@ namespace markusjx {
          * @param other the column to compare with
          * @return true if this is smaller than other
          */
-        CSV_NODISCARD bool operator<(const csvrowcolumn<T, _escape_generator_> &other) const {
+        CSV_NODISCARD bool operator<(const csv_cell<T, Sep, _escape_generator_> &other) const {
             if (this->isFloatingPoint() && other.isFloatingPoint()) {
                 return this->as<long double>() < other.as<long double>();
             } else if (this->isFloatingPoint() && other.isDecimal()) {
@@ -973,7 +1016,7 @@ namespace markusjx {
          * @param other the column to compare with
          * @return true if this is smaller than or equal to other
          */
-        CSV_NODISCARD bool operator<=(const csvrowcolumn<T, _escape_generator_> &other) const {
+        CSV_NODISCARD bool operator<=(const csv_cell<T, Sep, _escape_generator_> &other) const {
             if (this->isFloatingPoint() && other.isFloatingPoint()) {
                 return this->as<long double>() <= other.as<long double>();
             } else if (this->isFloatingPoint() && other.isDecimal()) {
@@ -1005,7 +1048,7 @@ namespace markusjx {
          * @param other the column to compare with
          * @return true if this is greater than other
          */
-        CSV_NODISCARD bool operator>(const csvrowcolumn<T, _escape_generator_> &other) const {
+        CSV_NODISCARD bool operator>(const csv_cell<T, Sep, _escape_generator_> &other) const {
             if (this->isFloatingPoint() && other.isFloatingPoint()) {
                 return this->as<long double>() > other.as<long double>();
             } else if (this->isFloatingPoint() && other.isDecimal()) {
@@ -1037,7 +1080,7 @@ namespace markusjx {
          * @param other the column to compare with
          * @return true if this is greater than or equal to other
          */
-        CSV_NODISCARD bool operator>=(const csvrowcolumn<T, _escape_generator_> &other) const {
+        CSV_NODISCARD bool operator>=(const csv_cell<T, Sep, _escape_generator_> &other) const {
             if (this->isFloatingPoint() && other.isFloatingPoint()) {
                 return this->as<long double>() >= other.as<long double>();
             } else if (this->isFloatingPoint() && other.isDecimal()) {
@@ -1068,7 +1111,7 @@ namespace markusjx {
          *
          * @return this after its value was increased
          */
-        csvrowcolumn &operator++() {
+        csv_cell &operator++() {
             if (isDecimal()) {
                 this->operator=(this->as<long long>() + 1);
             } else {
@@ -1082,8 +1125,8 @@ namespace markusjx {
          *
          * @return the value of this before it was increased
          */
-        csvrowcolumn operator++(int) {
-            csvrowcolumn<T, _escape_generator_> old = *this;
+        csv_cell operator++(int) {
+            csv_cell<T, Sep, _escape_generator_> old = *this;
             this->operator++();
 
             return old;
@@ -1094,7 +1137,7 @@ namespace markusjx {
          *
          * @return this after its value was decreased
          */
-        csvrowcolumn &operator--() {
+        csv_cell &operator--() {
             if (isDecimal()) {
                 this->operator=(this->as<long long>() - 1);
             } else {
@@ -1108,8 +1151,8 @@ namespace markusjx {
          *
          * @return this before its value was decreased
          */
-        csvrowcolumn operator--(int) {
-            csvrowcolumn<T, _escape_generator_> old = *this;
+        csv_cell operator--(int) {
+            csv_cell<T, Sep, _escape_generator_> old = *this;
             this->operator--();
             return old;
         }
@@ -1121,13 +1164,13 @@ namespace markusjx {
          * @param val the column to add
          * @return this with the column added
          */
-        CSV_NODISCARD csvrowcolumn operator+(const csvrowcolumn<T, _escape_generator_> &val) const {
+        CSV_NODISCARD csv_cell operator+(const csv_cell<T, Sep, _escape_generator_> &val) const {
             if (this->isFloatingPoint() || val.isFloatingPoint()) {
-                return csvrowcolumn(this->as<long double>() + val.as<long double>());
+                return csv_cell(this->as<long double>() + val.as<long double>());
             } else if (this->isNumber() && val.isNumber()) {
-                return csvrowcolumn(this->as<long long>() + val.as<long long>());
+                return csv_cell(this->as<long long>() + val.as<long long>());
             } else {
-                return csvrowcolumn(this->as<T>() + val.as<T>());
+                return csv_cell(this->as<T>() + val.as<T>());
             }
         }
 
@@ -1139,8 +1182,8 @@ namespace markusjx {
          * @return this with the value added
          */
         template<class U>
-        CSV_NODISCARD csvrowcolumn operator+(const U &val) const {
-            return csvrowcolumn(this->as<U>() + val);
+        CSV_NODISCARD csv_cell operator+(const U &val) const {
+            return csv_cell(this->as<U>() + val);
         }
 
         /**
@@ -1151,7 +1194,7 @@ namespace markusjx {
          * @return this
          */
         template<class U>
-        csvrowcolumn &operator+=(const U &val) {
+        csv_cell &operator+=(const U &val) {
             return this->operator=(this->operator+(val));
         }
 
@@ -1162,11 +1205,11 @@ namespace markusjx {
          * @param val the column to subtract
          * @return this with the column subtracted
          */
-        CSV_NODISCARD csvrowcolumn operator-(const csvrowcolumn<T, _escape_generator_> &val) const {
+        CSV_NODISCARD csv_cell operator-(const csv_cell<T, Sep, _escape_generator_> &val) const {
             if (this->isFloatingPoint() || val.isFloatingPoint()) {
-                return csvrowcolumn(this->as<long double>() - val.as<long double>());
+                return csv_cell(this->as<long double>() - val.as<long double>());
             } else if (this->isNumber() && val.isNumber()) {
-                return csvrowcolumn(this->as<long long>() - val.as<long long>());
+                return csv_cell(this->as<long long>() - val.as<long long>());
             } else {
                 throw exceptions::conversion_error("The value is not a number");
             }
@@ -1181,8 +1224,8 @@ namespace markusjx {
          * @return this with the value subtracted
          */
         template<class U>
-        CSV_NODISCARD csvrowcolumn operator-(const U &val) const {
-            return csvrowcolumn(this->as<U>() - val);
+        CSV_NODISCARD csv_cell operator-(const U &val) const {
+            return csv_cell(this->as<U>() - val);
         }
 
         /**
@@ -1194,7 +1237,7 @@ namespace markusjx {
          * @return this
          */
         template<class U>
-        csvrowcolumn &operator-=(const U &val) {
+        csv_cell &operator-=(const U &val) {
             return this->operator=(this->operator-(val));
         }
 
@@ -1205,11 +1248,11 @@ namespace markusjx {
          * @param val the column to multiply this with
          * @return this with val multiplied
          */
-        CSV_NODISCARD csvrowcolumn operator*(const csvrowcolumn<T, _escape_generator_> &val) const {
+        CSV_NODISCARD csv_cell operator*(const csv_cell<T, Sep, _escape_generator_> &val) const {
             if (this->isFloatingPoint() || val.isFloatingPoint()) {
-                return csvrowcolumn(this->as<long double>() * val.as<long double>());
+                return csv_cell(this->as<long double>() * val.as<long double>());
             } else if (this->isNumber() && val.isNumber()) {
-                return csvrowcolumn(this->as<long long>() * val.as<long long>());
+                return csv_cell(this->as<long long>() * val.as<long long>());
             } else {
                 throw exceptions::conversion_error("The value is not a number");
             }
@@ -1224,8 +1267,8 @@ namespace markusjx {
          * @return this with val multiplied
          */
         template<class U>
-        CSV_NODISCARD csvrowcolumn operator*(const U &val) const {
-            return csvrowcolumn(this->as<U>() * val);
+        CSV_NODISCARD csv_cell operator*(const U &val) const {
+            return csv_cell(this->as<U>() * val);
         }
 
         /**
@@ -1237,7 +1280,7 @@ namespace markusjx {
          * @return this
          */
         template<class U>
-        csvrowcolumn &operator*=(const U &val) {
+        csv_cell &operator*=(const U &val) {
             return this->operator=(this->operator*(val));
         }
 
@@ -1248,11 +1291,11 @@ namespace markusjx {
          * @param val the column to divide this by
          * @return this divided by val
          */
-        CSV_NODISCARD csvrowcolumn operator/(const csvrowcolumn<T, _escape_generator_> &val) const {
+        CSV_NODISCARD csv_cell operator/(const csv_cell<T, Sep, _escape_generator_> &val) const {
             if (this->isFloatingPoint() || val.isFloatingPoint()) {
-                return csvrowcolumn(this->as<long double>() / val.as<long double>());
+                return csv_cell(this->as<long double>() / val.as<long double>());
             } else if (this->isNumber() && val.isNumber()) {
-                return csvrowcolumn(this->as<long long>() / val.as<long long>());
+                return csv_cell(this->as<long long>() / val.as<long long>());
             } else {
                 throw exceptions::conversion_error("The value is not a number");
             }
@@ -1267,8 +1310,8 @@ namespace markusjx {
          * @return this divided by val
          */
         template<class U>
-        CSV_NODISCARD csvrowcolumn operator/(const U &val) const {
-            return csvrowcolumn(this->as<U>() / val);
+        CSV_NODISCARD csv_cell operator/(const U &val) const {
+            return csv_cell(this->as<U>() / val);
         }
 
         /**
@@ -1280,7 +1323,7 @@ namespace markusjx {
          * @return this divided by val
          */
         template<class U>
-        csvrowcolumn &operator/=(const U &val) {
+        csv_cell &operator/=(const U &val) {
             return this->operator=(this->operator/(val));
         }
 
@@ -1299,7 +1342,8 @@ namespace markusjx {
          * @return true if this is a number
          */
         CSV_NODISCARD bool isNumber() const {
-            const static std::regex number_regex("^-?[0-9]+(\\.[0-9]+)?$");
+            using C = typename T::value_type;
+            const std::basic_regex<C> number_regex(util::string_as<T>(std::string("^-?[0-9]+(\\.[0-9]+)?$")));
             return std::regex_match(value, number_regex);
         }
 
@@ -1309,7 +1353,8 @@ namespace markusjx {
          * @return true if this is a decimal
          */
         CSV_NODISCARD bool isDecimal() const {
-            const static std::regex decimal_regex("^-?[0-9]+$");
+            using C = typename T::value_type;
+            const std::basic_regex<C> decimal_regex(util::string_as<T>(std::string("^-?[0-9]+$")));
             return std::regex_match(value, decimal_regex);
         }
 
@@ -1319,8 +1364,20 @@ namespace markusjx {
          * @return true if this is a floating point integer
          */
         CSV_NODISCARD bool isFloatingPoint() const {
-            const static std::regex float_regex("^-?[0-9]+\\.[0-9]+$");
+            using C = typename T::value_type;
+            const std::basic_regex<C> float_regex(util::string_as<T>(std::string("^-?[0-9]+\\.[0-9]+$")));
             return std::regex_match(value, float_regex);
+        }
+
+        /**
+         * Check if this cell is a boolean
+         *
+         * @return true if this cell is a boolean
+         */
+        CSV_NODISCARD bool isBoolean() const {
+            using C = typename T::value_type;
+            const std::basic_regex<C> bool_regex(util::string_as<T>(std::string("^(true)|(false)$")));
+            return std::regex_match(value, bool_regex);
         }
 
     private:
@@ -1355,37 +1412,42 @@ namespace markusjx {
      * A constant csv row
      *
      * @tparam T the type of the row
+     * @tparam Sep the separator to use
+     * @tparam _escape_generator_ the escape sequence generator to use
      */
-    template<class T, class _escape_generator_>
-    class const_csvrow {
+    template<class T, char Sep = ';', class _escape_generator_ = util::escape_sequence_generator<T, Sep>>
+    class const_csv_row {
     public:
         CSV_CHECK_T_SUPPORTED
 
-        using column_iterator = typename std::vector<csvrowcolumn<T, _escape_generator_>>::const_iterator;
+        /**
+         * The cell iterator
+         */
+        using cell_iterator = typename std::vector<csv_cell<T, Sep, _escape_generator_>>::const_iterator;
 
         /**
          * Create an empty row
          */
-        const_csvrow() : columns() {}
+        const_csv_row() : cells() {}
 
         /**
          * Copy constructor
          *
          * @param other the object to copy
          */
-        const_csvrow(const const_csvrow &other) : columns(other.columns) {}
+        const_csv_row(const const_csv_row &other) : cells(other.cells) {}
 
         /**
          * Create an empty row
          */
-        explicit const_csvrow(std::nullptr_t) : columns() {}
+        explicit const_csv_row(std::nullptr_t) : cells() {}
 
         /**
          * Create a row from a data vector
          *
          * @param data the data vector
          */
-        const_csvrow(const std::vector<csvrowcolumn<T, _escape_generator_>> &data) : columns(data) {}
+        const_csv_row(const std::vector<csv_cell<T, Sep, _escape_generator_>> &data) : cells(data) {}
 
         /**
          * Create a row from a data vector
@@ -1394,9 +1456,9 @@ namespace markusjx {
          * @param data the data vector
          */
         template<class U>
-        const_csvrow(const std::vector<U> &data) : columns(data.size()) {
+        const_csv_row(const std::vector<U> &data) : cells(data.size()) {
             for (size_t i = 0; i < data.size(); i++) {
-                columns[i] = csvrowcolumn<T, _escape_generator_>(data[i]);
+                cells[i] = csv_cell<T, Sep, _escape_generator_>(data[i]);
             }
         }
 
@@ -1405,7 +1467,7 @@ namespace markusjx {
          *
          * @param data the std::initializer_list
          */
-        const_csvrow(const std::initializer_list<csvrowcolumn<T, _escape_generator_>> &data) : columns(data) {}
+        const_csv_row(const std::initializer_list<csv_cell<T, Sep, _escape_generator_>> &data) : cells(data) {}
 
         /**
          * Create a row from a std::initializer_list
@@ -1414,22 +1476,22 @@ namespace markusjx {
          * @param list the data list
          */
         template<class U>
-        const_csvrow(const std::initializer_list<U> &list) : columns() {
-            columns.reserve(list.size());
+        const_csv_row(const std::initializer_list<U> &list) : cells() {
+            cells.reserve(list.size());
             for (const U &val: list) {
-                columns.emplace_back(val);
+                cells.emplace_back(val);
             }
         }
 
         /**
          * This is const, so just don't.
          */
-        const_csvrow &operator=(const const_csvrow &) = delete;
+        const_csv_row &operator=(const const_csv_row &) = delete;
 
         /**
          * This is const, so just don't.
          */
-        const_csvrow &operator=(const_csvrow &&) = delete;
+        const_csv_row &operator=(const_csv_row &&) = delete;
 
         /**
          * Get a csv column at an index
@@ -1437,8 +1499,8 @@ namespace markusjx {
          * @param index the index of the column to get
          * @return the retrieved column
          */
-        const csvrowcolumn<T, _escape_generator_> &at(size_t index) const {
-            return this->columns.at(index);
+        const csv_cell<T, Sep, _escape_generator_> &at(size_t index) const {
+            return this->cells.at(index);
         }
 
         /**
@@ -1447,7 +1509,7 @@ namespace markusjx {
          * @param index the index of the column to get
          * @return the retrieved column
          */
-        const csvrowcolumn<T, _escape_generator_> &operator[](size_t columnIndex) const {
+        const csv_cell<T, Sep, _escape_generator_> &operator[](size_t columnIndex) const {
             return this->at(columnIndex);
         }
 
@@ -1457,14 +1519,14 @@ namespace markusjx {
          * @param other the row to compare this to
          * @return true if this equals other
          */
-        CSV_NODISCARD bool operator==(const const_csvrow<T, _escape_generator_> &other) const {
+        CSV_NODISCARD bool operator==(const const_csv_row<T, Sep, _escape_generator_> &other) const {
             if (this == &other) {
                 // Early return if this matches other exactly
                 return true;
             }
 
             if (this->size() == other.size()) {
-                // If the sizes match, compare the individual values of the columns
+                // If the sizes match, compare the individual values of the cells
                 for (size_t i = 0; i < this->size(); i++) {
                     if (this->at(i) != other.at(i)) {
                         return false;
@@ -1483,7 +1545,7 @@ namespace markusjx {
          * @param other the row to compare this with
          * @return true if this is not equal to other
          */
-        CSV_NODISCARD bool operator!=(const const_csvrow<T, _escape_generator_> &other) const {
+        CSV_NODISCARD bool operator!=(const const_csv_row<T, Sep, _escape_generator_> &other) const {
             return !this->operator==(other);
         }
 
@@ -1492,8 +1554,8 @@ namespace markusjx {
          *
          * @return the begin iterator
          */
-        CSV_NODISCARD virtual column_iterator begin() const noexcept {
-            return columns.begin();
+        CSV_NODISCARD virtual cell_iterator begin() const noexcept {
+            return cells.begin();
         }
 
         /**
@@ -1501,17 +1563,22 @@ namespace markusjx {
          *
          * @return the end iterator
          */
-        CSV_NODISCARD virtual column_iterator end() const noexcept {
-            return columns.end();
+        CSV_NODISCARD virtual cell_iterator end() const noexcept {
+            return cells.end();
         }
 
         /**
-         * Get the number of columns in this row
+         * Get the number of cells in this row
          *
-         * @return the number of columns in this row
+         * @return the number of cells in this row
          */
         CSV_NODISCARD size_t size() const noexcept {
-            return columns.size();
+            size_t sz = cells.size();
+            for (ptrdiff_t i = static_cast<signed>(cells.size()) - 1; i >= 0 && cells[i].empty(); i--) {
+                sz--;
+            }
+
+            return sz;
         }
 
         /**
@@ -1520,20 +1587,19 @@ namespace markusjx {
          * @return true if this row is empty
          */
         CSV_NODISCARD bool empty() const noexcept {
-            return columns.empty();
+            return cells.empty();
         }
 
         /**
          * Convert this row to a string
          *
-         * @param separator the separator to use
          * @return this as a string
          */
-        CSV_NODISCARD T to_string(char separator = ';') const {
+        CSV_NODISCARD T to_string(size_t len = 0) const {
             if constexpr (util::is_u8_string_v<T>) {
-                return to_string_impl<std::stringstream>(separator);
+                return to_string_impl<std::stringstream>(len);
             } else if constexpr (util::is_u16_string_v<T>) {
-                return to_string_impl<std::wstringstream>(separator);
+                return to_string_impl<std::wstringstream>(len);
             }
         }
 
@@ -1542,62 +1608,76 @@ namespace markusjx {
          * The to string implementation
          *
          * @tparam U the type of the string stream to use
-         * @param separator the separator to use
          * @return this as a string
          */
         template<class U>
-        CSV_NODISCARD T to_string_impl(char separator) const {
+        CSV_NODISCARD T to_string_impl(size_t len) const {
+            const size_t max = std::max(cells.size(), len);
             U ss;
 
             // Write all values with the separator at the end to the stream
-            for (const csvrowcolumn<T, _escape_generator_> &col : columns) {
-                ss << col.rawValue() << separator;
+            for (size_t i = 0; i < max; i++) {
+                if (i < cells.size()) {
+                    ss << cells[i].rawValue();
+                }
+
+                // Append the separator to each field except
+                // the last one (RFC 4180 section 2.4)
+                if (i < (max - 1)) {
+                    ss << Sep;
+                }
             }
 
             return ss.str();
         }
 
-        // The columns in this row
-        std::vector<csvrowcolumn<T, _escape_generator_>> columns;
+        // The cells in this row
+        std::vector<csv_cell<T, Sep, _escape_generator_>> cells;
     };
 
     /**
      * A csv row
      *
      * @tparam T the type of the row
+     * @tparam Sep the separator to use
+     * @tparam _escape_generator_ the escape sequence generator to use
      */
-    template<class T, class _escape_generator_ = util::escape_sequence_generator<T>>
-    class csvrow : public const_csvrow<T, _escape_generator_> {
+    template<class T, char Sep = ';', class _escape_generator_ = util::escape_sequence_generator<T, Sep>>
+    class csv_row : public const_csv_row<T, Sep, _escape_generator_> {
     public:
         CSV_CHECK_T_SUPPORTED
+
+        using const_cell_iterator = typename const_csv_row<T, Sep, _escape_generator_>::cell_iterator;
+        using cell_iterator = typename std::vector<csv_cell<T, Sep, _escape_generator_>>::iterator;
 
         /**
          * Parse a row string
          *
          * @param value the string value to parse
-         * @param separator the separator used in the string
          * @return the parsed row
          */
-        static csvrow<T, _escape_generator_> parse(const T &value, const char separator) {
-            csvrow row(nullptr);
+        static csv_row<T, Sep, _escape_generator_> parse(const T &value) {
+            csv_row row(nullptr);
+            _escape_generator_ escapeGenerator;
+
             if (!value.empty()) {
-                // Write all columns in the row's column vector
-                for (const T &col : util::splitString(value, separator)) {
-                    row << csvrowcolumn<T, _escape_generator_>::parse(col);
+                // Write all cells in the row's column vector
+                for (const T &col : escapeGenerator.splitString(value, Sep)) {
+                    row << csv_cell<T, Sep, _escape_generator_>::parse(col);
                 }
             }
 
             return row;
         }
 
-        using const_csvrow<T, _escape_generator_>::const_csvrow;
+        using const_csv_row<T, Sep, _escape_generator_>::const_csv_row;
 
         /**
          * Copy constructor
          *
          * @param row the row to copy
          */
-        csvrow(const csvrow<T, _escape_generator_> &row) : const_csvrow<T, _escape_generator_>(row) {}
+        csv_row(const csv_row<T, Sep, _escape_generator_> &row) : const_csv_row<T, Sep, _escape_generator_>(row) {}
 
         /**
          * Assign operator
@@ -1605,8 +1685,8 @@ namespace markusjx {
          * @param other the row to assign to this
          * @return this
          */
-        csvrow &operator=(const csvrow<T, _escape_generator_> &other) {
-            this->columns = other.columns;
+        csv_row &operator=(const csv_row<T, Sep, _escape_generator_> &other) {
+            this->cells = other.cells;
             return *this;
         }
 
@@ -1616,8 +1696,8 @@ namespace markusjx {
          * @param other the row to assign to this
          * @return this
          */
-        csvrow &operator=(const const_csvrow<T, _escape_generator_> &other) {
-            this->columns = other.columns;
+        csv_row &operator=(const const_csv_row<T, Sep, _escape_generator_> &other) {
+            this->cells = other.cells;
             return *this;
         }
 
@@ -1627,8 +1707,8 @@ namespace markusjx {
          * @param data the vector to assign to this
          * @return this
          */
-        csvrow &operator=(const std::vector<csvrowcolumn<T, _escape_generator_>> &data) {
-            this->columns = data;
+        csv_row &operator=(const std::vector<csv_cell<T, Sep, _escape_generator_>> &data) {
+            this->cells = data;
             return *this;
         }
 
@@ -1640,7 +1720,7 @@ namespace markusjx {
          * @return this
          */
         template<class U>
-        csvrow &operator=(const std::vector<U> &data) {
+        csv_row &operator=(const std::vector<U> &data) {
             for (size_t i = 0; i < data.size(); i++) {
                 this->at(i).operator=(data.at(i));
             }
@@ -1654,8 +1734,8 @@ namespace markusjx {
          * @param data the list to assign to this
          * @return this
          */
-        csvrow &operator=(const std::initializer_list<csvrowcolumn<T, _escape_generator_>> &data) {
-            this->columns = std::vector<csvrowcolumn<T, _escape_generator_>>(data);
+        csv_row &operator=(const std::initializer_list<csv_cell<T, Sep, _escape_generator_>> &data) {
+            this->cells = std::vector<csv_cell<T, Sep, _escape_generator_>>(data);
             return *this;
         }
 
@@ -1667,7 +1747,7 @@ namespace markusjx {
          * @return this
          */
         template<class U>
-        csvrow &operator=(const std::initializer_list<U> &data) {
+        csv_row &operator=(const std::initializer_list<U> &data) {
             for (size_t i = 0; i < data.size(); i++) {
                 this->at(i).operator=(data[i]);
             }
@@ -1681,8 +1761,8 @@ namespace markusjx {
          * @param other the row to add to this
          * @return this with the values of other added
          */
-        csvrow operator+(const const_csvrow<T, _escape_generator_> &other) const {
-            csvrow<T, _escape_generator_> res(this->columns);
+        csv_row operator+(const const_csv_row<T, Sep, _escape_generator_> &other) const {
+            csv_row<T, Sep, _escape_generator_> res(this->cells);
             res << other;
 
             return res;
@@ -1694,9 +1774,9 @@ namespace markusjx {
          * @param other the row to add to this
          * @return this
          */
-        csvrow &operator+=(const const_csvrow<T, _escape_generator_> &other) {
-            for (const csvrowcolumn<T, _escape_generator_> &col : other) {
-                this->columns.push_back(col);
+        csv_row &operator+=(const const_csv_row<T, Sep, _escape_generator_> &other) {
+            for (const csv_cell<T, Sep, _escape_generator_> &col : other) {
+                this->cells.push_back(col);
             }
 
             return *this;
@@ -1708,14 +1788,14 @@ namespace markusjx {
          * @param index the index of the column to get
          * @return the column at index
          */
-        csvrowcolumn<T, _escape_generator_> &at(size_t index) {
-            if (index >= this->columns.size()) {
-                for (size_t i = this->columns.size(); i <= index; i++) {
-                    this->columns.emplace_back(nullptr);
+        csv_cell<T, Sep, _escape_generator_> &at(size_t index) {
+            if (index >= this->cells.size()) {
+                for (size_t i = this->cells.size(); i <= index; i++) {
+                    this->cells.emplace_back(nullptr);
                 }
             }
 
-            return this->columns.at(index);
+            return this->cells.at(index);
         }
 
         /**
@@ -1724,7 +1804,7 @@ namespace markusjx {
          * @param index the index of the column to get
          * @return the column at index
          */
-        csvrowcolumn<T, _escape_generator_> &operator[](size_t columnIndex) {
+        csv_cell<T, Sep, _escape_generator_> &operator[](size_t columnIndex) {
             return this->at(columnIndex);
         }
 
@@ -1734,8 +1814,8 @@ namespace markusjx {
          * @param col the column to add to this
          * @return this
          */
-        csvrow &operator<<(const csvrowcolumn<T, _escape_generator_> &col) {
-            this->columns.push_back(col);
+        csv_row &operator<<(const csv_cell<T, Sep, _escape_generator_> &col) {
+            this->cells.push_back(col);
             return *this;
         }
 
@@ -1745,8 +1825,8 @@ namespace markusjx {
          * @param col the row to add to this
          * @return this
          */
-        csvrow &operator<<(const const_csvrow<T, _escape_generator_> &other) {
-            for (const csvrowcolumn<T, _escape_generator_> &col : other) {
+        csv_row &operator<<(const const_csv_row<T, Sep, _escape_generator_> &other) {
+            for (const csv_cell<T, Sep, _escape_generator_> &col : other) {
                 *this << col;
             }
 
@@ -1761,7 +1841,7 @@ namespace markusjx {
          * @return this
          */
         template<class U>
-        csvrow &push(const U &val) {
+        csv_row &push(const U &val) {
             return this->operator<<(val);
         }
 
@@ -1771,12 +1851,12 @@ namespace markusjx {
          *
          * @return the next column
          */
-        csvrowcolumn<T, _escape_generator_> &get_next() {
-            return this->columns.emplace_back(nullptr);
+        csv_cell<T, Sep, _escape_generator_> &get_next() {
+            return this->cells.emplace_back(nullptr);
         }
 
-        CSV_NODISCARD typename std::vector<csvrowcolumn<T, _escape_generator_>>::const_iterator begin() const noexcept {
-            return this->columns.begin();
+        CSV_NODISCARD const_cell_iterator begin() const noexcept {
+            return this->cells.begin();
         }
 
         /**
@@ -1784,12 +1864,12 @@ namespace markusjx {
          *
          * @return the begin iterator
          */
-        typename std::vector<csvrowcolumn<T, _escape_generator_>>::iterator begin() noexcept {
-            return this->columns.begin();
+        cell_iterator begin() noexcept {
+            return this->cells.begin();
         }
 
-        CSV_NODISCARD typename std::vector<csvrowcolumn<T, _escape_generator_>>::const_iterator end() const noexcept {
-            return this->columns.end();
+        CSV_NODISCARD const_cell_iterator end() const noexcept {
+            return this->cells.end();
         }
 
         /**
@@ -1797,15 +1877,15 @@ namespace markusjx {
          *
          * @return the end iterator
          */
-        typename std::vector<csvrowcolumn<T, _escape_generator_>>::iterator end() noexcept {
-            return this->columns.end();
+        cell_iterator end() noexcept {
+            return this->cells.end();
         }
 
         /**
          * Clear this row
          */
         void clear() noexcept {
-            this->columns.clear();
+            this->cells.clear();
         }
 
         /**
@@ -1814,7 +1894,7 @@ namespace markusjx {
          * @param index the index of the value to remove
          */
         void remove(size_t index) {
-            this->columns.erase(this->columns.begin() + index);
+            this->cells.erase(this->cells.begin() + index);
         }
     };
 
@@ -1822,29 +1902,35 @@ namespace markusjx {
      * A csv file
      *
      * @tparam T the char type of the file
+     * @tparam Sep the separator to use
+     * @tparam _escape_generator_ the escape sequence generator to use
      */
-    template<class T, class _escape_generator_ = util::escape_sequence_generator<util::std_basic_string<T>>>
+    template<class T, char Sep = ';', class _escape_generator_ = util::escape_sequence_generator<util::std_basic_string<T>, Sep>>
     class basic_csv_file;
 
     /**
      * A csv object
      *
      * @tparam T the string type of the object. Must be either std::string or std::wstring
+     * @tparam Sep the separator to use
+     * @tparam _escape_generator_ the escape sequence generator to use
      */
-    template<class T, class _escape_generator_ = util::escape_sequence_generator<T>>
+    template<class T, char Sep = ';', class _escape_generator_ = util::escape_sequence_generator<T, Sep>>
     class basic_csv {
     public:
         CSV_CHECK_T_SUPPORTED
+
+        using row_iterator = typename std::vector<csv_row<T, Sep, _escape_generator_>>::iterator;
+        using const_row_iterator = typename std::vector<csv_row<T, Sep, _escape_generator_>>::const_iterator;
 
         /**
          * Parse a csv string
          *
          * @param value the string to parse
-         * @param separator the separator to use
          * @return the parsed csv object
          */
-        static basic_csv<T, _escape_generator_> parse(const T &value, const char separator = ';') {
-            basic_csv<T, _escape_generator_> csv(separator);
+        static basic_csv<T, Sep, _escape_generator_> parse(const T &value) {
+            basic_csv<T, Sep, _escape_generator_> csv;
             csv.parseImpl(value);
 
             return csv;
@@ -1856,7 +1942,7 @@ namespace markusjx {
          * @param c the csv object to add a new line
          * @return the csv object
          */
-        static basic_csv<T, _escape_generator_> &endl(basic_csv<T, _escape_generator_> &c) {
+        static basic_csv<T, Sep, _escape_generator_> &endl(basic_csv<T, Sep, _escape_generator_> &c) {
             c.rows.emplace_back(nullptr);
             return c;
         }
@@ -1869,32 +1955,27 @@ namespace markusjx {
          * @return the file
          */
         template<class U, CSV_ENABLE_IF(util::is_any_of_v<U, char, wchar_t>) >
-        static basic_csv_file<U, _escape_generator_> &endl(basic_csv_file<U, _escape_generator_> &f) {
+        static basic_csv_file<U, Sep, _escape_generator_> &endl(basic_csv_file<U, Sep, _escape_generator_> &f) {
             f.endline();
             return f;
         }
 
         /**
          * Create an csv object
-         *
-         * @param separator the separator to use
          */
-        explicit basic_csv(char separator = ';') : rows(), separator(separator) {}
+        explicit basic_csv() : rows() {}
 
         /**
          * Create an empty csv object
-         *
-         * @param separator the separator to use
          */
-        basic_csv(std::nullptr_t, char separator = ';') : rows(), separator(separator) {}
+        basic_csv(std::nullptr_t) : rows() {}
 
         /**
          * Create an csv object from a string
          *
          * @param value the string to parse
-         * @param separator the separator to use
          */
-        basic_csv(const T &value, char separator = ';') : rows(), separator(separator) {
+        basic_csv(const T &value) : rows() {
             this->parseImpl(value);
         }
 
@@ -1903,10 +1984,9 @@ namespace markusjx {
          * Only available if T = std::wstring
          *
          * @param value the csv string to parse
-         * @param separator the separator to use
          */
         CSV_REQUIRES(T, std::wstring)
-        basic_csv(const std::string &value, char separator = ';') : rows(), separator(separator) {
+        basic_csv(const std::string &value) : rows() {
             this->parseImpl(util::string_to_wstring(value));
         }
 
@@ -1914,9 +1994,8 @@ namespace markusjx {
          * Create an csv object from a char array
          *
          * @param value the string char array to parse
-         * @param separator the separator to use
          */
-        basic_csv(const char *value, char separator = ';') : rows(), separator(separator) {
+        basic_csv(const char *value) : rows() {
             if constexpr (util::is_u8_string_v<T>) {
                 this->parseImpl(T(value));
             } else if constexpr (util::is_u16_string_v<T>) {
@@ -1929,10 +2008,9 @@ namespace markusjx {
          * Only available if T = std::wstring
          *
          * @param value the wide char array to parse
-         * @param separator the separator to use
          */
         CSV_REQUIRES(T, std::wstring)
-        basic_csv(const wchar_t *value, char separator = ';') : rows(), separator(separator) {
+        basic_csv(const wchar_t *value) : rows() {
             this->parseImpl(T(value));
         }
 
@@ -1940,38 +2018,31 @@ namespace markusjx {
          * Create an csv object from a data vector
          *
          * @param data the data vector
-         * @param separator the separator to use
          */
-        basic_csv(const std::vector<csvrow<T, _escape_generator_>> &data, char separator = ';') : rows(data), separator(
-                separator) {}
+        basic_csv(const std::vector<csv_row<T, Sep, _escape_generator_>> &data) : rows(data) {}
 
         /**
          * Create an csv object from a data vector
          *
          * @param data the data vector
-         * @param separator the separator to use
          */
-        basic_csv(const std::vector<csvrowcolumn<T, _escape_generator_>> &data, char separator = ';') : rows(
-                {csvrow<T, _escape_generator_>(data)}), separator(separator) {}
+        basic_csv(const std::vector<csv_cell<T, Sep, _escape_generator_>> &data) : rows(
+                {csv_row<T, Sep, _escape_generator_>(data)}) {}
 
         /**
          * Create an csv object from a std::initializer_list
          *
          * @param data the data initializer_list
-         * @param separator the separator to use
          */
-        basic_csv(const std::initializer_list<csvrow<T, _escape_generator_>> &data, char separator = ';') : rows(data),
-                                                                                                            separator(
-                                                                                                                    separator) {}
+        basic_csv(const std::initializer_list<csv_row<T, Sep, _escape_generator_>> &data) : rows(data) {}
 
         /**
          * Create an csv object from a std::initializer_list
          *
          * @param data the data initializer_list
-         * @param separator the separator to use
          */
-        basic_csv(const std::initializer_list<csvrowcolumn<T, _escape_generator_>> &data, char separator = ';') : rows(
-                {csvrow<T, _escape_generator_>(data)}), separator(separator) {}
+        basic_csv(const std::initializer_list<csv_cell<T, Sep, _escape_generator_>> &data) : rows(
+                {csv_row<T, Sep, _escape_generator_>(data)}) {}
 
         /**
          * Create a csv object from a csv file
@@ -1981,10 +2052,9 @@ namespace markusjx {
          */
         template<class U, CSV_ENABLE_IF(util::is_any_of_v<U, char, wchar_t> &&
                                                 std::is_same_v<std::basic_string<U, std::char_traits<U>, std::allocator<U>>, T>) >
-        basic_csv(basic_csv_file<U, _escape_generator_> &file) : rows() {
-            basic_csv<T, _escape_generator_> converted = file.to_basic_csv();
+        basic_csv(basic_csv_file<U, Sep, _escape_generator_> &file) : rows() {
+            basic_csv<T, Sep, _escape_generator_> converted = file.to_basic_csv();
             rows = std::move(converted.rows);
-            separator = converted.separator;
         }
 
         /**
@@ -1996,7 +2066,7 @@ namespace markusjx {
          */
         template<class U, CSV_ENABLE_IF(util::is_any_of_v<U, char, wchar_t> &&
                                                 std::is_same_v<std::basic_string<U, std::char_traits<U>, std::allocator<U>>, T>) >
-        basic_csv &operator=(basic_csv_file<U, _escape_generator_> &file) {
+        basic_csv &operator=(basic_csv_file<U, Sep, _escape_generator_> &file) {
             return this->operator=(std::move(file.to_basic_csv()));
         }
 
@@ -2007,7 +2077,7 @@ namespace markusjx {
          * @param index the index of the row to get
          * @return the retrieved row
          */
-        csvrow<T, _escape_generator_> &at(size_t index) {
+        csv_row<T, Sep, _escape_generator_> &at(size_t index) {
             if (index >= this->rows.size()) {
                 for (size_t i = rows.size(); i <= index; i++) {
                     rows.emplace_back(nullptr);
@@ -2023,7 +2093,7 @@ namespace markusjx {
          * @param index the index of the row to get
          * @return the retrieved row
          */
-        const csvrow<T, _escape_generator_> &at(size_t index) const {
+        const csv_row<T, Sep, _escape_generator_> &at(size_t index) const {
             return rows[index];
         }
 
@@ -2034,7 +2104,7 @@ namespace markusjx {
          * @param index the index of the row to get
          * @return the retrieved row
          */
-        csvrow<T, _escape_generator_> &operator[](size_t index) {
+        csv_row<T, Sep, _escape_generator_> &operator[](size_t index) {
             return this->at(index);
         }
 
@@ -2044,7 +2114,7 @@ namespace markusjx {
          * @param index the index of the row to get
          * @return the retrieved row
          */
-        const csvrow<T, _escape_generator_> &operator[](size_t index) const {
+        const csv_row<T, Sep, _escape_generator_> &operator[](size_t index) const {
             return this->at(index);
         }
 
@@ -2054,8 +2124,8 @@ namespace markusjx {
          * @param other the object to add
          * @return this
          */
-        basic_csv &operator<<(const basic_csv<T, _escape_generator_> &other) {
-            for (const csvrow<T, _escape_generator_> &row : other) {
+        basic_csv &operator<<(const basic_csv<T, Sep, _escape_generator_> &other) {
+            for (const csv_row<T, Sep, _escape_generator_> &row : other) {
                 rows.push_back(row);
             }
 
@@ -2068,7 +2138,7 @@ namespace markusjx {
          * @param col the column to append
          * @return this
          */
-        basic_csv &operator<<(const csvrowcolumn<T, _escape_generator_> &col) {
+        basic_csv &operator<<(const csv_cell<T, Sep, _escape_generator_> &col) {
             get_current() << col;
             return *this;
         }
@@ -2079,7 +2149,7 @@ namespace markusjx {
          * @param row the row to append
          * @return this
          */
-        basic_csv &operator<<(const csvrow<T, _escape_generator_> &row) {
+        basic_csv &operator<<(const csv_row<T, Sep, _escape_generator_> &row) {
             this->rows.push_back(row);
             return *this;
         }
@@ -2103,7 +2173,7 @@ namespace markusjx {
          * @param other the csv object to compare this with
          * @return true if the objects match
          */
-        CSV_NODISCARD bool operator==(const basic_csv<T, _escape_generator_> &other) const {
+        CSV_NODISCARD bool operator==(const basic_csv<T, Sep, _escape_generator_> &other) const {
             if (this == &other) {
                 return true;
             }
@@ -2128,7 +2198,7 @@ namespace markusjx {
          * @param other the csv object to compare this with
          * @return true if the objects do not match
          */
-        CSV_NODISCARD bool operator!=(const basic_csv<T, _escape_generator_> &other) const {
+        CSV_NODISCARD bool operator!=(const basic_csv<T, Sep, _escape_generator_> &other) const {
             return !this->operator==(other);
         }
 
@@ -2138,8 +2208,8 @@ namespace markusjx {
          * @param data the data vector to append
          * @return this
          */
-        basic_csv &push(const std::vector<csvrowcolumn<T, _escape_generator_>> &data) {
-            for (const csvrowcolumn<T, _escape_generator_> &col : data) {
+        basic_csv &push(const std::vector<csv_cell<T, Sep, _escape_generator_>> &data) {
+            for (const csv_cell<T, Sep, _escape_generator_> &col : data) {
                 this->template operator<<(col);
             }
             return *this;
@@ -2151,8 +2221,8 @@ namespace markusjx {
          * @param data the data vector to append
          * @return this
          */
-        basic_csv &push(const std::initializer_list<csvrowcolumn<T, _escape_generator_>> &data) {
-            for (const csvrowcolumn<T, _escape_generator_> &col : data) {
+        basic_csv &push(const std::initializer_list<csv_cell<T, Sep, _escape_generator_>> &data) {
+            for (const csv_cell<T, Sep, _escape_generator_> &col : data) {
                 this->template operator<<(col);
             }
             return *this;
@@ -2164,8 +2234,8 @@ namespace markusjx {
          * @param data the data vector to append
          * @return this
          */
-        basic_csv &push(const std::vector<csvrow<T, _escape_generator_>> &data) {
-            for (const csvrow<T, _escape_generator_> &col : data) {
+        basic_csv &push(const std::vector<csv_row<T, Sep, _escape_generator_>> &data) {
+            for (const csv_row<T, Sep, _escape_generator_> &col : data) {
                 this->push(col);
             }
             return *this;
@@ -2177,8 +2247,8 @@ namespace markusjx {
          * @param data the data vector to append
          * @return this
          */
-        basic_csv &push(const std::initializer_list<csvrow<T, _escape_generator_>> &data) {
-            for (const csvrow<T, _escape_generator_> &col : data) {
+        basic_csv &push(const std::initializer_list<csv_row<T, Sep, _escape_generator_>> &data) {
+            for (const csv_row<T, Sep, _escape_generator_> &col : data) {
                 this->push(col);
             }
             return *this;
@@ -2217,7 +2287,7 @@ namespace markusjx {
          */
         template<class U>
         CSV_NODISCARD basic_csv operator+(const U &val) const {
-            basic_csv<T, _escape_generator_> res(*this);
+            basic_csv<T, Sep, _escape_generator_> res(*this);
             res.push(val);
 
             return res;
@@ -2226,7 +2296,7 @@ namespace markusjx {
         /**
          * Operator << for the use of csv::endl
          */
-        basic_csv &operator<<(basic_csv<T, _escape_generator_> &(*val)(basic_csv<T, _escape_generator_> &)) {
+        basic_csv &operator<<(basic_csv<T, Sep, _escape_generator_> &(*val)(basic_csv<T, Sep, _escape_generator_> &)) {
             return val(*this);
         }
 
@@ -2284,7 +2354,7 @@ namespace markusjx {
          *
          * @return the begin iterator
          */
-        typename std::vector<csvrow<T, _escape_generator_>>::iterator begin() noexcept {
+        row_iterator begin() noexcept {
             return rows.begin();
         }
 
@@ -2293,7 +2363,7 @@ namespace markusjx {
          *
          * @return the begin const iterator
          */
-        CSV_NODISCARD typename std::vector<csvrow<T, _escape_generator_>>::const_iterator begin() const noexcept {
+        CSV_NODISCARD const_row_iterator begin() const noexcept {
             return rows.begin();
         }
 
@@ -2302,7 +2372,7 @@ namespace markusjx {
          *
          * @return the end iterator
          */
-        typename std::vector<csvrow<T, _escape_generator_>>::iterator end() noexcept {
+        row_iterator end() noexcept {
             return rows.end();
         }
 
@@ -2311,7 +2381,7 @@ namespace markusjx {
          *
          * @return the end const iterator
          */
-        CSV_NODISCARD typename std::vector<csvrow<T, _escape_generator_>>::const_iterator end() const noexcept {
+        CSV_NODISCARD const_row_iterator end() const noexcept {
             return rows.end();
         }
 
@@ -2350,13 +2420,29 @@ namespace markusjx {
         }
 
         /**
+         * Get the length of the longest row in this csv object
+         *
+         * @return the length of the longest row
+         */
+        CSV_NODISCARD size_t maxRowLength() const {
+            size_t max = 0;
+            for (const csv_row<T, Sep, _escape_generator_> &row : rows) {
+                if (row.size() > max) {
+                    max = row.size();
+                }
+            }
+
+            return max;
+        }
+
+        /**
          * Get the number of columns in this object
          *
          * @return the number of rows
          */
         CSV_NODISCARD uint64_t numElements() const {
             uint64_t size = 0;
-            for (const csvrow<T, _escape_generator_> &row : rows) {
+            for (const csv_row<T, Sep, _escape_generator_> &row : rows) {
                 size += row.size();
             }
 
@@ -2370,7 +2456,7 @@ namespace markusjx {
          * @param csv the object to write to ostream
          * @return the stream
          */
-        friend std::ostream &operator<<(std::ostream &ostream, const basic_csv<T, _escape_generator_> &csv) {
+        friend std::ostream &operator<<(std::ostream &ostream, const basic_csv<T, Sep, _escape_generator_> &csv) {
             if constexpr (util::is_u8_string_v<T>) {
                 ostream << csv.to_string();
             } else if constexpr (util::is_u16_string_v<T>) {
@@ -2387,7 +2473,7 @@ namespace markusjx {
          * @param csv the object to write to ostream
          * @return the stream
          */
-        friend std::wostream &operator<<(std::wostream &ostream, const basic_csv<T, _escape_generator_> &csv) {
+        friend std::wostream &operator<<(std::wostream &ostream, const basic_csv<T, Sep, _escape_generator_> &csv) {
             if constexpr (util::is_u16_string_v<T>) {
                 ostream << csv.to_string();
             } else if constexpr (util::is_u8_string_v<T>) {
@@ -2404,13 +2490,13 @@ namespace markusjx {
          * @param csv the object to read from istream
          * @return the stream
          */
-        friend std::istream &operator>>(std::istream &istream, basic_csv<T, _escape_generator_> &csv) {
+        friend std::istream &operator>>(std::istream &istream, basic_csv<T, Sep, _escape_generator_> &csv) {
             std::string res(std::istreambuf_iterator<char>(istream), {});
 
             if constexpr (util::is_u8_string_v<T>) {
-                csv << basic_csv::parse(res, csv.separator);
+                csv << basic_csv::parse(res);
             } else if constexpr (util::is_u16_string_v<T>) {
-                csv << basic_csv::parse(util::string_to_wstring(res), csv.separator);
+                csv << basic_csv::parse(util::string_to_wstring(res));
             }
 
             return istream;
@@ -2423,13 +2509,13 @@ namespace markusjx {
          * @param csv the object to read from istream
          * @return the stream
          */
-        friend std::wistream &operator>>(std::wistream &istream, basic_csv<T, _escape_generator_> &csv) {
+        friend std::wistream &operator>>(std::wistream &istream, basic_csv<T, Sep, _escape_generator_> &csv) {
             std::wstring res(std::istreambuf_iterator<wchar_t>(istream), {});
 
             if constexpr (util::is_u8_string_v<T>) {
-                csv << basic_csv::parse(util::wstring_to_string(res), csv.separator);
+                csv << basic_csv::parse(util::wstring_to_string(res));
             } else if constexpr (util::is_u16_string_v<T>) {
-                csv << basic_csv::parse(res, csv.separator);
+                csv << basic_csv::parse(res);
             }
 
             return istream;
@@ -2442,7 +2528,7 @@ namespace markusjx {
          *
          * @return the current row
          */
-        csvrow<T, _escape_generator_> &get_current() {
+        csv_row<T, Sep, _escape_generator_> &get_current() {
             // Push a new empty row to the row list if list is empty
             if (rows.empty()) {
                 rows.emplace_back(nullptr);
@@ -2459,17 +2545,16 @@ namespace markusjx {
          */
         template<class U>
         CSV_NODISCARD T to_string_impl() const {
+            const size_t max = maxRowLength();
             U ss;
+
             for (size_t i = 0; i < rows.size(); i++) {
                 // Prepend a new line if there was already data written
                 if (i > 0) {
                     ss << std::endl;
                 }
 
-                // Write all cells to the string and append the separator
-                for (const csvrowcolumn<T, _escape_generator_> &col : this->rows[i]) {
-                    ss << col.rawValue() << separator;
-                }
+                ss << rows[i].to_string(max);
             }
 
             return ss.str();
@@ -2481,30 +2566,24 @@ namespace markusjx {
          * @param value the string value to parse
          */
         void parseImpl(const T &value) {
+            _escape_generator_ escapeGenerator;
+
             // Split the string by newlines and
             // push the lines into the row vector
-            for (const T &row : util::splitString(value, '\n')) {
-                rows.push_back(csvrow<T, _escape_generator_>::parse(row, separator));
-            }
-
-            // If value ends with a new line, insert a
-            // new line into this objects row array
-            if (!value.empty()) {
-                if (value[value.size() - 1] == '\n') {
-                    rows.emplace_back(nullptr);
-                }
+            for (const T &row : escapeGenerator.splitString(value, '\n')) {
+                rows.push_back(csv_row<T, Sep, _escape_generator_>::parse(row));
             }
         }
 
         // The rows in this csv object
-        std::vector<csvrow<T, _escape_generator_>> rows;
-        // The separator to use
-        char separator;
+        std::vector<csv_row<T, Sep, _escape_generator_>> rows;
     };
 
-    template<class T, class _escape_generator_>
+    template<class T, char Sep, class _escape_generator_>
     class basic_csv_file {
-    private:
+    public:
+        static_assert(util::is_any_of_v<T, char, wchar_t>, "T must be one of [char, wchar_t]");
+
         // The string type
         using string_t = std::basic_string<T, std::char_traits<T>, std::allocator<T>>;
 
@@ -2513,27 +2592,25 @@ namespace markusjx {
 
         // The cache iterator
         using cache_iterator = typename std::map<uint64_t, string_t>::const_iterator;
-    public:
-        static_assert(util::is_any_of_v<T, char, wchar_t>, "T must be one of [char, wchar_t]");
 
         /**
          * A const csv file row
          */
-        class const_csv_file_row : public const_csvrow<string_t, _escape_generator_> {
+        class const_csv_file_row : public const_csv_row<string_t, Sep, _escape_generator_> {
         public:
             /**
              * Create a const csv file row
              *
              * @param data the data to use
              */
-            explicit const_csv_file_row(const csvrow<string_t, _escape_generator_> &data)
-                    : const_csvrow<string_t, _escape_generator_>(data) {}
+            explicit const_csv_file_row(const csv_row<string_t, Sep, _escape_generator_> &data)
+                    : const_csv_row<string_t, Sep, _escape_generator_>(data) {}
         };
 
         /**
          * A csv file tow
          */
-        class csv_file_row : public csvrow<string_t, _escape_generator_> {
+        class csv_file_row : public csv_row<string_t, Sep, _escape_generator_> {
         public:
             /**
              * Create a csv file row
@@ -2542,14 +2619,14 @@ namespace markusjx {
              * @param data the data to use
              * @param line the line of the row in the file
              */
-            csv_file_row(basic_csv_file &file, const csvrow<string_t, _escape_generator_> &data, int64_t line)
-                    : csvrow<string_t, _escape_generator_>(data), line(line), file(file) {}
+            csv_file_row(basic_csv_file &file, const csv_row<string_t, Sep, _escape_generator_> &data, int64_t line)
+                    : csv_row<string_t, Sep, _escape_generator_>(data), line(line), file(file) {}
 
             /**
              * The csv file row destructor. Saves the line.
              */
             ~csv_file_row() {
-                file.writeToFile(this->to_string(file.separator), line);
+                file.writeToFile(this->to_string(), line);
             }
 
         private:
@@ -2564,10 +2641,9 @@ namespace markusjx {
          *
          * @param path the path to the file
          * @param maxCached the number of cached elements
-         * @param separator the separator to use
          */
-        explicit basic_csv_file(const string_t &path, size_t maxCached = 100, char separator = ';')
-                : toDelete(), maxCached(maxCached), cache(), separator(separator), path(path) {
+        explicit basic_csv_file(const string_t &path, size_t maxCached = 100)
+                : toDelete(), maxCached(maxCached), cache(), path(path) {
             // Assign the current line to the index of the last line in the file
             currentLine = getLastFileLineIndex();
         }
@@ -2578,7 +2654,7 @@ namespace markusjx {
          * @param csv the csv object to assign
          * @return this
          */
-        basic_csv_file &operator=(const basic_csv<string_t, _escape_generator_> &csv) {
+        basic_csv_file &operator=(const basic_csv<string_t, Sep, _escape_generator_> &csv) {
             clear();
             return this->push(csv);
         }
@@ -2590,10 +2666,10 @@ namespace markusjx {
          * @return this
          */
         basic_csv_file &operator<<(const char *val) {
-            csvrow<string_t, _escape_generator_> row = getCurrentLine();
+            csv_row<string_t, Sep, _escape_generator_> row = getCurrentLine();
 
-            row << csvrowcolumn<string_t, _escape_generator_>(val);
-            writeToFile(row.to_string(separator), currentLine);
+            row << csv_cell<string_t, Sep, _escape_generator_>(val);
+            writeToFile(row.to_string(), currentLine);
 
             return *this;
         }
@@ -2607,10 +2683,10 @@ namespace markusjx {
          */
         CSV_REQUIRES(T, std::wstring)
         basic_csv_file &operator<<(const wchar_t *val) {
-            csvrow<string_t, _escape_generator_> row = getCurrentLine();
+            csv_row<string_t, Sep, _escape_generator_> row = getCurrentLine();
 
-            row << csvrowcolumn<string_t, _escape_generator_>(val);
-            writeToFile(row.to_string(separator), currentLine);
+            row << csv_cell<string_t, Sep, _escape_generator_>(val);
+            writeToFile(row.to_string(), currentLine);
 
             return *this;
         }
@@ -2624,10 +2700,10 @@ namespace markusjx {
          */
         template<class U>
         basic_csv_file &operator<<(const U &val) {
-            csvrow<string_t, _escape_generator_> row = getCurrentLine();
+            csv_row<string_t, Sep, _escape_generator_> row = getCurrentLine();
 
-            row << csvrowcolumn<string_t, _escape_generator_>(val);
-            writeToFile(row.to_string(separator), currentLine);
+            row << csv_cell<string_t, Sep, _escape_generator_>(val);
+            writeToFile(row.to_string(), currentLine);
 
             return *this;
         }
@@ -2638,12 +2714,12 @@ namespace markusjx {
          * @param el the object to write
          * @return this
          */
-        basic_csv_file &operator<<(const basic_csv<string_t, _escape_generator_> &el) {
-            csvrow<string_t, _escape_generator_> line = getCurrentLine();
+        basic_csv_file &operator<<(const basic_csv<string_t, Sep, _escape_generator_> &el) {
+            csv_row<string_t, Sep, _escape_generator_> line = getCurrentLine();
 
             // Assign el to csv and add el[0] to the existing
             // line and push all of that into csv[o]
-            basic_csv<string_t, _escape_generator_> csv = el;
+            basic_csv<string_t, Sep, _escape_generator_> csv = el;
             csv[0] = line + el[0];
             writeToFile(csv.to_string(), currentLine);
 
@@ -2657,7 +2733,7 @@ namespace markusjx {
          * Operator << for basic_csv_file::endl
          */
         basic_csv_file &
-        operator<<(basic_csv_file<T, _escape_generator_> &(*val)(basic_csv_file<T, _escape_generator_> &)) {
+        operator<<(basic_csv_file<T, Sep, _escape_generator_> &(*val)(basic_csv_file<T, Sep, _escape_generator_> &)) {
             return val(*this);
         }
 
@@ -2669,8 +2745,9 @@ namespace markusjx {
          * @param csv the csv object to write to
          * @return the csv object
          */
-        friend basic_csv<string_t, _escape_generator_> &
-        operator>>(basic_csv_file<T, _escape_generator_> &file, basic_csv<string_t, _escape_generator_> &csv) {
+        friend basic_csv<string_t, Sep, _escape_generator_> &
+        operator>>(basic_csv_file<T, Sep, _escape_generator_> &file,
+                   basic_csv<string_t, Sep, _escape_generator_> &csv) {
             file.flush();
 
             stream_t in = file.getStream(std::ios::in);
@@ -2747,8 +2824,8 @@ namespace markusjx {
          *
          * @return this as an csv object
          */
-        basic_csv<string_t, _escape_generator_> to_basic_csv() {
-            basic_csv<string_t, _escape_generator_> csv;
+        basic_csv<string_t, Sep, _escape_generator_> to_basic_csv() {
+            basic_csv<string_t, Sep, _escape_generator_> csv;
             *this >> csv;
 
             return csv;
@@ -2814,6 +2891,23 @@ namespace markusjx {
         }
 
         /**
+         * Get the length of the longest row in this csv file
+         *
+         * @return the length of the longest row
+         */
+        CSV_NODISCARD size_t maxRowLength() const {
+            size_t max = 0;
+            for (uint64_t i = 0; i < size(); i++) {
+                size_t sz = at(i).size();
+                if (sz > max) {
+                    max = sz;
+                }
+            }
+
+            return max;
+        }
+
+        /**
          * Write the cache to the file if it isn't empty
          */
         void flush() {
@@ -2836,7 +2930,7 @@ namespace markusjx {
          * @param c the file to append a new line to
          * @return the file
          */
-        static basic_csv_file &endl(basic_csv_file<T, _escape_generator_> &c) {
+        static basic_csv_file &endl(basic_csv_file<T, Sep, _escape_generator_> &c) {
             c.endline();
             return c;
         }
@@ -2890,7 +2984,7 @@ namespace markusjx {
          * @param line the zero-based index of the line to get (translated)
          * @return the created or retrieved row
          */
-        csvrow<string_t, _escape_generator_> getOrCreateLine(uint64_t line) {
+        csv_row<string_t, Sep, _escape_generator_> getOrCreateLine(uint64_t line) {
             if (line <= getTranslatedMaxLineIndex()) {
                 return getLine(line);
             } else {
@@ -2899,7 +2993,7 @@ namespace markusjx {
                 if (line > currentLine) currentLine = line;
                 writeToFile(string_t(), line);
 
-                return csvrow<string_t, _escape_generator_>(nullptr);
+                return csv_row<string_t, Sep, _escape_generator_>(nullptr);
             }
         }
 
@@ -2910,10 +3004,10 @@ namespace markusjx {
          * @param line the zero-based index of the line to get
          * @return the retrieved row
          */
-        CSV_NODISCARD csvrow<string_t, _escape_generator_> getLine(uint64_t line) const {
+        CSV_NODISCARD csv_row<string_t, Sep, _escape_generator_> getLine(uint64_t line) const {
             // Return an empty row if line does not exist
             if (line > getTranslatedMaxLineIndex()) {
-                return csvrow<string_t, _escape_generator_>(nullptr);
+                return csv_row<string_t, Sep, _escape_generator_>(nullptr);
             }
 
             // Check if the line is in the cache
@@ -2930,13 +3024,13 @@ namespace markusjx {
 
                 // Return the value
                 if (value.empty()) {
-                    return csvrow<string_t, _escape_generator_>(nullptr);
+                    return csv_row<string_t, Sep, _escape_generator_>(nullptr);
                 } else {
-                    return csvrow<string_t, _escape_generator_>::parse(value, separator);
+                    return csv_row<string_t, Sep, _escape_generator_>::parse(value);
                 }
             } else {
                 // Return the cached value
-                return csvrow<string_t, _escape_generator_>::parse(it->second, separator);
+                return csv_row<string_t, Sep, _escape_generator_>::parse(it->second);
             }
         }
 
@@ -2945,7 +3039,7 @@ namespace markusjx {
          *
          * @return the current row
          */
-        CSV_NODISCARD csvrow<string_t, _escape_generator_> getCurrentLine() const {
+        CSV_NODISCARD csv_row<string_t, Sep, _escape_generator_> getCurrentLine() const {
             return getLine(currentLine);
         }
 
@@ -3028,6 +3122,8 @@ namespace markusjx {
             stream_t out(getTmpFile(), std::ios::out | std::ios::app);
             stream_t in = getStream(std::ios::in);
 
+            const size_t maxLength = maxRowLength();
+
             // Whether there was already a line written to the output file
             bool lineWritten = false;
             // The current line index
@@ -3056,7 +3152,7 @@ namespace markusjx {
                 // If not, write the original value to the tmp file
                 const cache_iterator it = cache.find(i);
                 if (it == cache.end()) {
-                    out << current;
+                    out << csv_row<string_t, Sep, _escape_generator_>::parse(current).to_string(maxLength);
                 } else {
                     out << it->second;
                     cache.erase(it);
@@ -3090,7 +3186,7 @@ namespace markusjx {
                     // Write the line to the file if a value for it exists in the cache
                     const cache_iterator it = cache.find(i);
                     if (it != cache.end()) {
-                        out << it->second;
+                        out << csv_row<string_t, Sep, _escape_generator_>::parse(it->second).to_string(maxLength);
                     }
                 }
             } else {
@@ -3155,9 +3251,6 @@ namespace markusjx {
         // The row cache
         std::map<uint64_t, string_t> cache;
 
-        // The value separator
-        char separator;
-
         // The path to the file
         string_t path;
 
@@ -3168,25 +3261,25 @@ namespace markusjx {
     /**
      * A utf-8 csv object
      */
-    using csv = basic_csv<std::string, util::escape_sequence_generator<std::string>>;
+    using csv = basic_csv<std::string, ';', util::escape_sequence_generator<std::string, ';'>>;
 
     /**
      * A utf-16 csv object
      */
-    using w_csv = basic_csv<std::wstring, util::escape_sequence_generator<std::wstring>>;
+    using w_csv = basic_csv<std::wstring, ';', util::escape_sequence_generator<std::wstring, ';'>>;
 
     /**
      * A utf-8 csv file
      */
-    using csv_file = basic_csv_file<char, util::escape_sequence_generator<util::std_basic_string<char>>>;
+    using csv_file = basic_csv_file<char, ';', util::escape_sequence_generator<util::std_basic_string<char>, ';'>>;
 
     /**
      * A utf-16 csv file
      */
-    using w_csv_file = basic_csv_file<wchar_t, util::escape_sequence_generator<util::std_basic_string<wchar_t>>>;
+    using w_csv_file = basic_csv_file<wchar_t, ';', util::escape_sequence_generator<util::std_basic_string<wchar_t>, ';'>>;
 }
 
-// Undefine everything
+// Un-define everything
 #undef CSV_NODISCARD
 #undef CSV_CHECK_T_SUPPORTED
 #undef CSV_WINDOWS
