@@ -1509,8 +1509,8 @@ namespace markusjx {
          * @return this with the values of other added
          */
         const_csv_row operator+(const const_csv_row<T, Sep, _escape_generator_> &other) const {
-            csv_row<T, Sep, _escape_generator_> res(*this);
-            res << other;
+            const_csv_row<T, Sep, _escape_generator_> res(*this);
+            res.cells.insert(res.cells.end(), other.cells.begin(), other.cells.end());
 
             return res;
         }
