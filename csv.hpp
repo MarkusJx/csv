@@ -491,7 +491,9 @@ namespace markusjx {
                 // This is mostly in here because a line must not end with a
                 // separator (RFC 4180 section 2.4). So if it ends with a
                 // separator, there must be another, empty cell behind that separator.
-                if (!str.empty() && str[str.size() - 1] == delimiter) {
+                // However, this is not the case for new lines, as the last record in
+                // the file may or may not end with a new line (RFC 4180 section 2.2).
+                if (!str.empty() && str[str.size() - 1] == delimiter && delimiter != '\n') {
                     tokens.push_back(T());
                 }
 
@@ -1452,6 +1454,13 @@ namespace markusjx {
         /**
          * Create a row from a data vector
          *
+         * @param data the data vector
+         */
+        const_csv_row(std::vector<csv_cell<T, Sep, _escape_generator_>> &&data) : cells(std::move(data)) {}
+
+        /**
+         * Create a row from a data vector
+         *
          * @tparam U the type of the data vector
          * @param data the data vector
          */
@@ -1492,6 +1501,19 @@ namespace markusjx {
          * This is const, so just don't.
          */
         const_csv_row &operator=(const_csv_row &&) = delete;
+
+        /**
+         * Operator add
+         *
+         * @param other the row to add to this
+         * @return this with the values of other added
+         */
+        const_csv_row operator+(const const_csv_row<T, Sep, _escape_generator_> &other) const {
+            csv_row<T, Sep, _escape_generator_> res(*this);
+            res << other;
+
+            return res;
+        }
 
         /**
          * Get a csv column at an index
@@ -1603,6 +1625,11 @@ namespace markusjx {
             }
         }
 
+        friend std::ostream &operator<<(std::ostream &stream, const const_csv_row &row) {
+            stream << row.to_string();
+            return stream;
+        }
+
     protected:
         /**
          * The to string implementation
@@ -1673,6 +1700,22 @@ namespace markusjx {
         using const_csv_row<T, Sep, _escape_generator_>::const_csv_row;
 
         /**
+         * Create a csv_row from a const_csv_row
+         *
+         * @param other the const csv row to create this from
+         */
+        csv_row(const const_csv_row<T, Sep, _escape_generator_> &other) : const_csv_row<T, Sep, _escape_generator_>(
+                other) {}
+
+        /**
+         * Create a csv_row from a const_csv_row
+         *
+         * @param other the const csv row to create this from
+         */
+        csv_row(const_csv_row<T, Sep, _escape_generator_> &&other) : const_csv_row<T, Sep, _escape_generator_>(
+                std::move(other)) {}
+
+        /**
          * Copy constructor
          *
          * @param row the row to copy
@@ -1686,17 +1729,6 @@ namespace markusjx {
          * @return this
          */
         csv_row &operator=(const csv_row<T, Sep, _escape_generator_> &other) {
-            this->cells = other.cells;
-            return *this;
-        }
-
-        /**
-         * Assign operator
-         *
-         * @param other the row to assign to this
-         * @return this
-         */
-        csv_row &operator=(const const_csv_row<T, Sep, _escape_generator_> &other) {
             this->cells = other.cells;
             return *this;
         }
@@ -1753,19 +1785,6 @@ namespace markusjx {
             }
 
             return *this;
-        }
-
-        /**
-         * Operator add
-         *
-         * @param other the row to add to this
-         * @return this with the values of other added
-         */
-        csv_row operator+(const const_csv_row<T, Sep, _escape_generator_> &other) const {
-            csv_row<T, Sep, _escape_generator_> res(this->cells);
-            res << other;
-
-            return res;
         }
 
         /**
@@ -2585,56 +2604,14 @@ namespace markusjx {
         static_assert(util::is_any_of_v<T, char, wchar_t>, "T must be one of [char, wchar_t]");
 
         // The string type
-        using string_t = std::basic_string<T, std::char_traits<T>, std::allocator<T>>;
+        using string_type = std::basic_string<T, std::char_traits<T>, std::allocator<T>>;
 
         // The stream type
-        using stream_t = std::basic_fstream<T, std::char_traits<T>>;
+        using stream_type = std::basic_fstream<T, std::char_traits<T>>;
 
-        // The cache iterator
-        using cache_iterator = typename std::map<uint64_t, string_t>::const_iterator;
-
-        /**
-         * A const csv file row
-         */
-        class const_csv_file_row : public const_csv_row<string_t, Sep, _escape_generator_> {
-        public:
-            /**
-             * Create a const csv file row
-             *
-             * @param data the data to use
-             */
-            explicit const_csv_file_row(const csv_row<string_t, Sep, _escape_generator_> &data)
-                    : const_csv_row<string_t, Sep, _escape_generator_>(data) {}
-        };
-
-        /**
-         * A csv file tow
-         */
-        class csv_file_row : public csv_row<string_t, Sep, _escape_generator_> {
-        public:
-            /**
-             * Create a csv file row
-             *
-             * @param file the file
-             * @param data the data to use
-             * @param line the line of the row in the file
-             */
-            csv_file_row(basic_csv_file &file, const csv_row<string_t, Sep, _escape_generator_> &data, int64_t line)
-                    : csv_row<string_t, Sep, _escape_generator_>(data), line(line), file(file) {}
-
-            /**
-             * The csv file row destructor. Saves the line.
-             */
-            ~csv_file_row() {
-                file.writeToFile(this->to_string(), line);
-            }
-
-        private:
-            // The line in the file
-            int64_t line;
-            // The csv file reference
-            basic_csv_file &file;
-        };
+        // The cache iterators
+        using cache_iterator = typename std::map<uint64_t, csv_row<string_type, Sep, _escape_generator_>>::iterator;
+        using const_cache_iterator = typename std::map<uint64_t, csv_row<string_type, Sep, _escape_generator_>>::const_iterator;
 
         /**
          * Create a csv file
@@ -2642,7 +2619,7 @@ namespace markusjx {
          * @param path the path to the file
          * @param maxCached the number of cached elements
          */
-        explicit basic_csv_file(const string_t &path, size_t maxCached = 100)
+        explicit basic_csv_file(const string_type &path, size_t maxCached = 100)
                 : toDelete(), maxCached(maxCached), cache(), path(path) {
             // Assign the current line to the index of the last line in the file
             currentLine = getLastFileLineIndex();
@@ -2654,7 +2631,7 @@ namespace markusjx {
          * @param csv the csv object to assign
          * @return this
          */
-        basic_csv_file &operator=(const basic_csv<string_t, Sep, _escape_generator_> &csv) {
+        basic_csv_file &operator=(const basic_csv<string_type, Sep, _escape_generator_> &csv) {
             clear();
             return this->push(csv);
         }
@@ -2666,9 +2643,9 @@ namespace markusjx {
          * @return this
          */
         basic_csv_file &operator<<(const char *val) {
-            csv_row<string_t, Sep, _escape_generator_> row = getCurrentLine();
+            csv_row<string_type, Sep, _escape_generator_> row = getCurrentLine();
 
-            row << csv_cell<string_t, Sep, _escape_generator_>(val);
+            row << csv_cell<string_type, Sep, _escape_generator_>(val);
             writeToFile(row.to_string(), currentLine);
 
             return *this;
@@ -2683,9 +2660,9 @@ namespace markusjx {
          */
         CSV_REQUIRES(T, std::wstring)
         basic_csv_file &operator<<(const wchar_t *val) {
-            csv_row<string_t, Sep, _escape_generator_> row = getCurrentLine();
+            csv_row<string_type, Sep, _escape_generator_> row = getCurrentLine();
 
-            row << csv_cell<string_t, Sep, _escape_generator_>(val);
+            row << csv_cell<string_type, Sep, _escape_generator_>(val);
             writeToFile(row.to_string(), currentLine);
 
             return *this;
@@ -2700,10 +2677,8 @@ namespace markusjx {
          */
         template<class U>
         basic_csv_file &operator<<(const U &val) {
-            csv_row<string_t, Sep, _escape_generator_> row = getCurrentLine();
-
-            row << csv_cell<string_t, Sep, _escape_generator_>(val);
-            writeToFile(row.to_string(), currentLine);
+            csv_row<string_type, Sep, _escape_generator_> &row = getCurrentLine();
+            row << csv_cell<string_type, Sep, _escape_generator_>(val);
 
             return *this;
         }
@@ -2714,14 +2689,24 @@ namespace markusjx {
          * @param el the object to write
          * @return this
          */
-        basic_csv_file &operator<<(const basic_csv<string_t, Sep, _escape_generator_> &el) {
-            csv_row<string_t, Sep, _escape_generator_> line = getCurrentLine();
+        basic_csv_file &operator<<(const basic_csv<string_type, Sep, _escape_generator_> &el) {
+            const const_csv_row<string_type, Sep, _escape_generator_> line = getCurrentLine();
 
             // Assign el to csv and add el[0] to the existing
             // line and push all of that into csv[o]
-            basic_csv<string_t, Sep, _escape_generator_> csv = el;
+            basic_csv<string_type, Sep, _escape_generator_> csv = el;
             csv[0] = line + el[0];
-            writeToFile(csv.to_string(), currentLine);
+
+            for (ptrdiff_t i = 0; i < static_cast<signed>(csv.size()); i++) {
+                cache.insert_or_assign(currentLine, csv[i]);
+
+                // Only increase the current line if i is
+                // not the last line index in csv.
+                // Remember: currentLine is also an index
+                if (i < static_cast<signed>(csv.size()) - 1) {
+                    currentLine++;
+                }
+            }
 
             // Flush
             flush();
@@ -2745,12 +2730,12 @@ namespace markusjx {
          * @param csv the csv object to write to
          * @return the csv object
          */
-        friend basic_csv<string_t, Sep, _escape_generator_> &
+        friend basic_csv<string_type, Sep, _escape_generator_> &
         operator>>(basic_csv_file<T, Sep, _escape_generator_> &file,
-                   basic_csv<string_t, Sep, _escape_generator_> &csv) {
+                   basic_csv<string_type, Sep, _escape_generator_> &csv) {
             file.flush();
 
-            stream_t in = file.getStream(std::ios::in);
+            stream_type in = file.getStream(std::ios::in);
             in >> csv;
             in.close();
 
@@ -2776,13 +2761,13 @@ namespace markusjx {
          * @param line the zero-based index of the row
          * @return the const row
          */
-        const_csv_file_row at(uint64_t line) const {
+        const_csv_row<string_type, Sep, _escape_generator_> at(uint64_t line) const {
             if (line > getMaxLineIndex()) {
                 throw exceptions::index_out_of_range_error("The requested line index does not exist");
             }
 
             translateLine(line);
-            return const_csv_file_row(getLine(line));
+            return getLineFromFile(line);
         }
 
         /**
@@ -2792,9 +2777,9 @@ namespace markusjx {
          * @param line the zero-based index of the row
          * @return the row
          */
-        csv_file_row at(uint64_t line) {
+        csv_row<string_type, Sep, _escape_generator_> &at(uint64_t line) {
             translateLine(line);
-            return csv_file_row(*this, getOrCreateLine(line), line);
+            return getOrCreateLine(line);
         }
 
         /**
@@ -2804,7 +2789,7 @@ namespace markusjx {
          * @param line the zero-based index of the row
          * @return the const row
          */
-        const_csv_file_row operator[](uint64_t line) const {
+        const_csv_row<string_type, Sep, _escape_generator_> operator[](uint64_t line) const {
             return this->at(line);
         }
 
@@ -2815,7 +2800,7 @@ namespace markusjx {
          * @param line the zero-based index of the row
          * @return the row
          */
-        csv_file_row operator[](uint64_t line) {
+        csv_row<string_type, Sep, _escape_generator_> &operator[](uint64_t line) {
             return this->at(line);
         }
 
@@ -2824,8 +2809,8 @@ namespace markusjx {
          *
          * @return this as an csv object
          */
-        basic_csv<string_t, Sep, _escape_generator_> to_basic_csv() {
-            basic_csv<string_t, Sep, _escape_generator_> csv;
+        basic_csv<string_type, Sep, _escape_generator_> to_basic_csv() {
+            basic_csv<string_type, Sep, _escape_generator_> csv;
             *this >> csv;
 
             return csv;
@@ -2864,7 +2849,7 @@ namespace markusjx {
             translateLine(index);
 
             // Erase the line from the cache if it is stored in there
-            const cache_iterator it = cache.find(index);
+            const const_cache_iterator it = cache.find(index);
             if (it != cache.end()) {
                 cache.erase(it);
             }
@@ -2966,7 +2951,7 @@ namespace markusjx {
          * @param row the row to write
          * @param line the line of the row to write
          */
-        void writeToFile(const string_t &row, uint64_t line) {
+        void writeToFile(const csv_row<string_type, Sep, _escape_generator_> &row, uint64_t line) {
             cache.insert_or_assign(line, row);
 
             // If the cache size is greater than or equal to
@@ -2984,16 +2969,48 @@ namespace markusjx {
          * @param line the zero-based index of the line to get (translated)
          * @return the created or retrieved row
          */
-        csv_row<string_t, Sep, _escape_generator_> getOrCreateLine(uint64_t line) {
+        csv_row<string_type, Sep, _escape_generator_> &getOrCreateLine(uint64_t line) {
             if (line <= getTranslatedMaxLineIndex()) {
                 return getLine(line);
             } else {
                 // If line is greater than currentLine,
                 // set currentLine to line
                 if (line > currentLine) currentLine = line;
-                writeToFile(string_t(), line);
+                writeToFile(csv_row<string_type, Sep, _escape_generator_>(nullptr), line);
 
-                return csv_row<string_t, Sep, _escape_generator_>(nullptr);
+                if (cache.empty()) {
+                    cache.insert_or_assign(line, csv_row<string_type, Sep, _escape_generator_>(nullptr));
+                }
+
+                return cache.at(line);
+            }
+        }
+
+        CSV_NODISCARD csv_row<string_type, Sep, _escape_generator_> getLineFromFile(uint64_t line) const {
+            if (line > getTranslatedMaxLineIndex()) {
+                throw exceptions::index_out_of_range_error("The requested line is out of range");
+            }
+
+            // Check if the line is in the cache
+            const const_cache_iterator it = cache.find(line);
+            if (it == cache.end()) {
+                // Get a stream and navigate to the line
+                stream_type in = getStream(std::ios::in);
+                gotoLine(in, line);
+
+                // Read the value of the line
+                string_type value;
+                std::getline(in, value);
+                in.close();
+
+                // Return the value
+                if (value.empty()) {
+                    return csv_row<string_type, Sep, _escape_generator_>(nullptr);
+                } else {
+                    return csv_row<string_type, Sep, _escape_generator_>::parse(value);
+                }
+            } else {
+                return it->second;
             }
         }
 
@@ -3004,33 +3021,23 @@ namespace markusjx {
          * @param line the zero-based index of the line to get
          * @return the retrieved row
          */
-        CSV_NODISCARD csv_row<string_t, Sep, _escape_generator_> getLine(uint64_t line) const {
-            // Return an empty row if line does not exist
+        csv_row<string_type, Sep, _escape_generator_> &getLine(uint64_t line) {
             if (line > getTranslatedMaxLineIndex()) {
-                return csv_row<string_t, Sep, _escape_generator_>(nullptr);
+                throw exceptions::index_out_of_range_error("The requested line is out of range");
             }
 
             // Check if the line is in the cache
-            const cache_iterator it = cache.find(line);
+            cache_iterator it = cache.find(line);
             if (it == cache.end()) {
-                // Get a stream and navigate to the line
-                stream_t in = getStream(std::ios::in);
-                gotoLine(in, line);
-
-                // Read the value of the line
-                string_t value;
-                std::getline(in, value);
-                in.close();
+                csv_row<string_type, Sep, _escape_generator_> row = getLineFromFile(line);
 
                 // Return the value
-                if (value.empty()) {
-                    return csv_row<string_t, Sep, _escape_generator_>(nullptr);
-                } else {
-                    return csv_row<string_t, Sep, _escape_generator_>::parse(value);
-                }
+                cache.insert_or_assign(line, row);
+
+                return cache.at(line);
             } else {
                 // Return the cached value
-                return csv_row<string_t, Sep, _escape_generator_>::parse(it->second);
+                return it->second;
             }
         }
 
@@ -3039,8 +3046,17 @@ namespace markusjx {
          *
          * @return the current row
          */
-        CSV_NODISCARD csv_row<string_t, Sep, _escape_generator_> getCurrentLine() const {
-            return getLine(currentLine);
+        CSV_NODISCARD const_csv_row<string_type, Sep, _escape_generator_> getCurrentLine() const {
+            return getLineFromFile(currentLine);
+        }
+
+        /**
+         * Get the row stored in the current line
+         *
+         * @return the current row
+         */
+        CSV_NODISCARD csv_row<string_type, Sep, _escape_generator_> &getCurrentLine() {
+            return getOrCreateLine(currentLine);
         }
 
         /**
@@ -3049,8 +3065,8 @@ namespace markusjx {
          * @param openMode the open mode flags
          * @return the created stream
          */
-        CSV_NODISCARD stream_t getStream(std::ios_base::openmode openMode) const {
-            return stream_t(path, openMode);
+        CSV_NODISCARD stream_type getStream(std::ios_base::openmode openMode) const {
+            return stream_type(path, openMode);
         }
 
         /**
@@ -3060,7 +3076,7 @@ namespace markusjx {
          */
         CSV_NODISCARD uint64_t getLastFileLineIndex() const {
             // Get the stream to the file and count the lines
-            stream_t in = getStream(std::ios::in);
+            stream_type in = getStream(std::ios::in);
             uint64_t lines = std::count(std::istreambuf_iterator<T>(in), std::istreambuf_iterator<T>(), '\n');
             in.close();
 
@@ -3101,12 +3117,12 @@ namespace markusjx {
          * @tparam U the type of the path
          * @return the path as U
          */
-        template<class U = string_t>
+        template<class U = string_type>
         CSV_NODISCARD U getTmpFile() const {
-            string_t out = path;
-            if constexpr (util::is_u8_string_v<string_t>) {
+            string_type out = path;
+            if constexpr (util::is_u8_string_v<string_type>) {
                 out += ".tmp";
-            } else if constexpr (util::is_u16_string_v<string_t>) {
+            } else if constexpr (util::is_u16_string_v<string_type>) {
                 out += L".tmp";
             }
 
@@ -3119,8 +3135,8 @@ namespace markusjx {
         void writeCacheToFile() {
             // Delete the tmp file and get the streams
             std::remove(getTmpFile<std::string>().c_str());
-            stream_t out(getTmpFile(), std::ios::out | std::ios::app);
-            stream_t in = getStream(std::ios::in);
+            stream_type out(getTmpFile(), std::ios::out | std::ios::app);
+            stream_type in = getStream(std::ios::in);
 
             const size_t maxLength = maxRowLength();
 
@@ -3129,7 +3145,7 @@ namespace markusjx {
             // The current line index
             uint64_t i = 0;
             // The content of the current line in the file
-            string_t current;
+            string_type current;
             // Go to the beginning of the file
             in.seekg(std::ios::beg);
             while (std::getline(in, current)) {
@@ -3150,11 +3166,11 @@ namespace markusjx {
                 // Check if the cache has a value for the current line.
                 // IF so, write that to the tmp file instead of the original value.
                 // If not, write the original value to the tmp file
-                const cache_iterator it = cache.find(i);
+                const const_cache_iterator it = cache.find(i);
                 if (it == cache.end()) {
-                    out << csv_row<string_t, Sep, _escape_generator_>::parse(current).to_string(maxLength);
+                    out << csv_row<string_type, Sep, _escape_generator_>::parse(current).to_string(maxLength);
                 } else {
-                    out << it->second;
+                    out << it->second.to_string(maxLength);
                     cache.erase(it);
                 }
 
@@ -3184,9 +3200,11 @@ namespace markusjx {
                     }
 
                     // Write the line to the file if a value for it exists in the cache
-                    const cache_iterator it = cache.find(i);
+                    const const_cache_iterator it = cache.find(i);
                     if (it != cache.end()) {
-                        out << csv_row<string_t, Sep, _escape_generator_>::parse(it->second).to_string(maxLength);
+                        out << it->second.to_string(maxLength);
+                    } else {
+                        out << csv_row<string_type, Sep, _escape_generator_>(nullptr).to_string(maxLength);
                     }
                 }
             } else {
@@ -3202,6 +3220,7 @@ namespace markusjx {
                     // Prepend a new line if there was already a line written to the file
                     if (lineWritten) {
                         out << std::endl;
+                        out << csv_row<string_type, Sep, _escape_generator_>(nullptr).to_string(maxLength);
                     } else {
                         lineWritten = true;
                     }
@@ -3235,7 +3254,7 @@ namespace markusjx {
          * @param stream the stream to move
          * @param num the line to move to
          */
-        static void gotoLine(stream_t &stream, uint64_t num) {
+        static void gotoLine(stream_type &stream, uint64_t num) {
             stream.seekg(std::ios::beg);
             for (size_t i = 0; i < num; i++) {
                 stream.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
@@ -3249,10 +3268,10 @@ namespace markusjx {
         size_t maxCached;
 
         // The row cache
-        std::map<uint64_t, string_t> cache;
+        std::map<uint64_t, csv_row<string_type, Sep, _escape_generator_>> cache;
 
         // The path to the file
-        string_t path;
+        string_type path;
 
         // The zero-based index of the current line
         uint64_t currentLine;
