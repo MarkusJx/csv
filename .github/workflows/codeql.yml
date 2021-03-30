@@ -1,0 +1,35 @@
+name: "CodeQL"
+
+on:
+  push:
+  pull_request:
+
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      # Initializes the CodeQL tools for scanning.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v1
+        with:
+          languages: 'cpp'
+
+      # Build C++
+      # This will install boost und build using cmake
+      - name: Build c++
+        run: |
+          cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} . -B build
+          cmake --build build
+
+      # Perform the code analysis
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v1
