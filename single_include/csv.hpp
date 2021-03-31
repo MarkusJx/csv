@@ -1,37 +1,10 @@
-/*
- * csv.hpp
- *
- * Licensed under the MIT License
- *
- * Copyright (c) 2021 MarkusJx
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
+#ifndef MARKUSJX_CSV_CSV_HPP
+#define MARKUSJX_CSV_CSV_HPP
 
-#ifndef MARKUSJX_CSV_HPP
-#define MARKUSJX_CSV_HPP
+#include <cstring>
 
-#include <vector>
-#include <sstream>
-#include <string>
-#include <regex>
-#include <map>
+#ifndef MARKUSJX_CSV_DEFINITIONS_HPP
+#define MARKUSJX_CSV_DEFINITIONS_HPP
 
 #if defined(_MSVC_LANG) || defined(__cplusplus)
 #   if (defined(_MSVC_LANG) && _MSVC_LANG > 201703L) || __cplusplus > 201703L // C++20
@@ -81,433 +54,469 @@
 #   define MARKUSJX_CSV_SEPARATOR ';'
 #endif //MARKUSJX_CSV_SEPARATOR
 
-namespace markusjx {
+#endif //MARKUSJX_CSV_DEFINITIONS_HPP
+
+#ifndef MARKUSJX_CSV_ESCAPE_SEQUENCE_GENERATOR_HPP
+#define MARKUSJX_CSV_ESCAPE_SEQUENCE_GENERATOR_HPP
+
+#include <cstring>
+#include <vector>
+
+#ifndef MARKUSJX_CSV_EXCEPTIONS_HPP
+#define MARKUSJX_CSV_EXCEPTIONS_HPP
+
+#include <stdexcept>
+
+namespace markusjx::exceptions {
     /**
-     * A namespace for exceptions
+     * A generic exception
      */
-    namespace exceptions {
+    class exception : public std::runtime_error {
+    public:
         /**
-         * A generic exception
-         */
-        class exception : public std::runtime_error {
-        public:
-            /**
-             * Get the exception type
-             *
-             * @return the exception type
-             */
-            CSV_NODISCARD const char *getType() const noexcept {
-                return type;
-            }
-
-        protected:
-            /**
-             * Create an exception
-             *
-             * @param type the exception type
-             * @param msg the error message
-             */
-            exception(const char *type, const std::string &msg) : std::runtime_error(msg), type(type) {}
-
-            // The exception type
-            const char *type;
-        };
-
-        /**
-         * A parse error
-         */
-        class parse_error : public exception {
-        public:
-            /**
-             * Create a parse error
-             *
-             * @param msg the error message
-             */
-            explicit parse_error(const std::string &msg) : exception("ParseError", msg) {}
-        };
-
-        /**
-         * A conversion error
-         */
-        class conversion_error : public exception {
-        public:
-            /**
-             * Create a conversion error
-             *
-             * @param msg the error message
-             */
-            explicit conversion_error(const std::string &msg) : exception("ConversionError", msg) {}
-        };
-
-        /**
-         * An index out of range error
-         */
-        class index_out_of_range_error : public exception {
-        public:
-            /**
-             * Create an index out of range error
-             *
-             * @param msg the error message
-             */
-            explicit index_out_of_range_error(const std::string &msg) : exception("IndexOutOfRangeError", msg) {}
-        };
-    } // namespace exceptions
-
-    /**
-     * A utility namespace
-     */
-    namespace util {
-        /**
-         * Check if T is any of Types
+         * Get the exception type
          *
-         * @tparam T the type to check
-         * @tparam Types the types to check against
+         * @return the exception type
          */
-        template<class T, class... Types>
-        inline constexpr bool is_any_of_v = std::disjunction_v<std::is_same<T, Types>...>;
-
-        /**
-         * Check if T is a utf-8 string
-         *
-         * @tparam T the type to check
-         */
-        template<class T>
-        inline constexpr bool is_u8_string_v = is_any_of_v<T, std::string>;
-
-        /**
-         * Check if T is a utf-16 string
-         *
-         * @tparam T the type to check
-         */
-        template<class T>
-        inline constexpr bool is_u16_string_v = is_any_of_v<T, std::wstring>;
-
-        /**
-         * An alias for std::basic_string
-         *
-         * @tparam T the type of the string
-         */
-        template<class T>
-        using std_basic_string = std::basic_string<T, std::char_traits<T>, std::allocator<T>>;
-
-        /**
-         * Convert a string to a number. Alternative version
-         *
-         * @tparam T the number type
-         * @tparam S the string type
-         * @param str the string to convert
-         * @param conversionFunc the conversion function
-         * @return the converted number
-         */
-        template<class T, class S>
-        inline T stringToNumberAlt(const S &str, T(*conversionFunc)(const S &, size_t *)) {
-            size_t idx = 0;
-            T res = conversionFunc(str, &idx);
-
-            if (idx != 0 && idx != str.size()) {
-                throw exceptions::conversion_error("Could not fully convert the value");
-            } else {
-                return res;
-            }
+        CSV_NODISCARD const char *getType() const noexcept {
+            return type;
         }
 
+    protected:
         /**
-         * Convert a string to a number
+         * Create an exception
          *
-         * @tparam T the number type
-         * @tparam S the string type
-         * @param str the string to convert
-         * @param conversionFunc the conversion function
-         * @return the converted number
+         * @param type the exception type
+         * @param msg the error message
          */
-        template<class T, class S>
-        inline T stringToNumber(const S &str, T(*conversionFunc)(const S &, size_t *, int)) {
-            size_t idx = 0;
-            T res = conversionFunc(str, &idx, 10);
+        exception(const char *type, const std::string &msg) : std::runtime_error(msg), type(type) {}
 
-            if (idx == 0) {
-                throw exceptions::conversion_error("Could not convert the value");
-            } else {
-                return res;
-            }
+        // The exception type
+        const char *type;
+    };
+
+    /**
+     * A parse error
+     */
+    class parse_error : public exception {
+    public:
+        /**
+         * Create a parse error
+         *
+         * @param msg the error message
+         */
+        explicit parse_error(const std::string &msg) : exception("ParseError", msg) {}
+    };
+
+    /**
+     * A conversion error
+     */
+    class conversion_error : public exception {
+    public:
+        /**
+         * Create a conversion error
+         *
+         * @param msg the error message
+         */
+        explicit conversion_error(const std::string &msg) : exception("ConversionError", msg) {}
+    };
+
+    /**
+     * An index out of range error
+     */
+    class index_out_of_range_error : public exception {
+    public:
+        /**
+         * Create an index out of range error
+         *
+         * @param msg the error message
+         */
+        explicit index_out_of_range_error(const std::string &msg) : exception("IndexOutOfRangeError", msg) {}
+    };
+} //namespace markusjx::exceptions
+
+#endif //MARKUSJX_CSV_EXCEPTIONS_HPP
+
+#ifndef MARKUSJX_CSV_UTIL_HPP
+#define MARKUSJX_CSV_UTIL_HPP
+
+#include <cstdlib>
+#include <cstring>
+#include <type_traits>
+
+namespace markusjx::util {
+    /**
+     * Check if T is any of Types
+     *
+     * @tparam T the type to check
+     * @tparam Types the types to check against
+     */
+    template<class T, class... Types>
+    inline constexpr bool is_any_of_v = std::disjunction_v<std::is_same<T, Types>...>;
+
+    /**
+     * Check if T is a utf-8 string
+     *
+     * @tparam T the type to check
+     */
+    template<class T>
+    inline constexpr bool is_u8_string_v = is_any_of_v<T, std::string>;
+
+    /**
+     * Check if T is a utf-16 string
+     *
+     * @tparam T the type to check
+     */
+    template<class T>
+    inline constexpr bool is_u16_string_v = is_any_of_v<T, std::wstring>;
+
+    /**
+     * An alias for std::basic_string
+     *
+     * @tparam T the type of the string
+     */
+    template<class T>
+    using std_basic_string = std::basic_string<T, std::char_traits<T>, std::allocator<T>>;
+
+    /**
+     * Convert a string to a number. Alternative version
+     *
+     * @tparam T the number type
+     * @tparam S the string type
+     * @param str the string to convert
+     * @param conversionFunc the conversion function
+     * @return the converted number
+     */
+    template<class T, class S>
+    inline T stringToNumberAlt(const S &str, T(*conversionFunc)(const S &, size_t *)) {
+        size_t idx = 0;
+        T res = conversionFunc(str, &idx);
+
+        if (idx != 0 && idx != str.size()) {
+            throw exceptions::conversion_error("Could not fully convert the value");
+        } else {
+            return res;
         }
+    }
 
-        /**
-         * Convert a std::wstring to a std::string
-         *
-         * @param in the wide string to convert
-         * @return the converted string
-         */
-        inline std::string wstring_to_string(const std::wstring &in) {
-            // Create the result string
-            std::string out(in.size() + 1, ' ');
+    /**
+     * Convert a string to a number
+     *
+     * @tparam T the number type
+     * @tparam S the string type
+     * @param str the string to convert
+     * @param conversionFunc the conversion function
+     * @return the converted number
+     */
+    template<class T, class S>
+    inline T stringToNumber(const S &str, T(*conversionFunc)(const S &, size_t *, int)) {
+        size_t idx = 0;
+        T res = conversionFunc(str, &idx, 10);
+
+        if (idx == 0) {
+            throw exceptions::conversion_error("Could not convert the value");
+        } else {
+            return res;
+        }
+    }
+
+    /**
+     * Convert a std::wstring to a std::string
+     *
+     * @param in the wide string to convert
+     * @return the converted string
+     */
+    inline std::string wstring_to_string(const std::wstring &in) {
+        // Create the result string
+        std::string out(in.size() + 1, ' ');
 
 #ifdef CSV_WINDOWS
-            size_t outSize;
+        size_t outSize;
 
-            errno_t err = wcstombs_s(&outSize, out.data(), out.size(), in.c_str(), in.size());
-            if (err) {
-                throw exceptions::conversion_error("Could not convert the string");
-            }
+        errno_t err = wcstombs_s(&outSize, out.data(), out.size(), in.c_str(), in.size());
+        if (err) {
+            throw exceptions::conversion_error("Could not convert the string");
+        }
 #elif defined(CSV_UNIX)
-            size_t written = wcstombs(out.data(), in.c_str(), in.size());
-            if (written == static_cast<size_t>(-1)) {
-                throw exceptions::conversion_error("Could not convert the string");
-            }
+        size_t written = wcstombs(out.data(), in.c_str(), in.size());
+        if (written == static_cast<size_t>(-1)) {
+            throw exceptions::conversion_error("Could not convert the string");
+        }
 #endif // WINODWS OR UNIX
 
-            out.resize(in.size());
-            return out;
-        }
-
-        /**
-         * Convert a std::string to a std::wstring
-         *
-         * @param in the string to convert
-         * @return the converted wide string
-         */
-        inline std::wstring string_to_wstring(const std::string &in) {
-            std::wstring out(in.size() + 1, L' ');
-
-#ifdef CSV_WINDOWS
-            size_t outSize;
-            errno_t err = mbstowcs_s(&outSize, (wchar_t *) out.data(), out.size(), in.c_str(), in.size());
-            if (err) {
-                throw exceptions::conversion_error("Could not create the string");
-            }
-#elif defined(CSV_UNIX)
-            size_t written = mbstowcs(out.data(), in.c_str(), in.size());
-            if (written == static_cast<size_t>(-1)) {
-                throw exceptions::conversion_error("Could not convert the string");
-            }
-#endif // WINDOWS OR UNIX
-
-            out.resize(in.size());
-            return out;
-        }
-
-        /**
-         * Get a string as another string type
-         *
-         * @tparam T the string type to convert to
-         * @tparam U the type of the string to convert
-         * @param str the string to convert
-         * @return the converted string
-         */
-        template<class T, class U, CSV_ENABLE_IF(
-                (is_u8_string_v<T> || is_u16_string_v<T>) && (is_u8_string_v<U> || is_u16_string_v<U>)) >
-        inline T string_as(const U &str) {
-            static_assert(is_u8_string_v<T> || is_u16_string_v<T>);
-            static_assert(is_u8_string_v<U> || is_u16_string_v<U>);
-
-            if constexpr ((is_u8_string_v<T> && is_u8_string_v<U>) || (is_u16_string_v<T> && is_u16_string_v<U>)) {
-                return str;
-            } else if constexpr (is_u8_string_v<T> && is_u16_string_v<U>) {
-                return wstring_to_string(str);
-            } else if constexpr (is_u16_string_v<T> && is_u8_string_v<U>) {
-                return string_to_wstring(str);
-            }
-        }
-
-        /**
-         * The default escape sequence generator.
-         * This implementation enforces the rules
-         * defined in RFC 4180.
-         *
-         * @tparam T the string type
-         * @tparam Sep the separator to use
-         * @tparam C the character type
-         */
-        template<class T, char Sep = ';', class C = typename T::value_type>
-        class escape_sequence_generator {
-        public:
-            CSV_CHECK_T_SUPPORTED
-
-            /**
-             * Escape a character
-             *
-             * @param character the character to escape
-             * @return the escaped character string
-             */
-            virtual T escape_character(C character) const {
-                switch (character) {
-                    case '\"':
-                        return string_as<T>(std::string("\"\""));
-                    default:
-                        return T(1, character);
-                }
-            }
-
-            /**
-             * Escape a string
-             *
-             * @param str the string to escape
-             * @param delimiter the delimiter used in the csv file
-             * @return the escaped string
-             */
-            virtual T escape_string(const T &str) const {
-                // Prepend and append a double quote to the
-                // string if it contains a new line, a double
-                // quote or a separator (RFC 4180 section 2.6)
-                if (str.find('\n') != T::npos || str.find('\"') != T::npos || str.find(Sep) != T::npos) {
-                    T res;
-
-                    res += '\"';
-                    for (const C character : str) {
-                        res.append(escape_character(character));
-                    }
-                    res += '\"';
-
-                    return res;
-                } else {
-                    return str;
-                }
-            }
-
-            /**
-             * Un-escape a character
-             *
-             * @param character the character to un-escape
-             * @param converted will be set to true if the character could be un-escaped
-             * @return the un-escaped character
-             */
-            virtual C unescape_character(C character, bool &converted) const {
-                switch (character) {
-                    case '\"':
-                        converted = true;
-                        return static_cast<C>('\"');
-                    default:
-                        converted = false;
-                        return character;
-                }
-            }
-
-            /**
-             * Un-escape a string
-             *
-             * @param toConvert the string to un-escape
-             * @param only_quotes_tm whether to only remove leading and trailing quotes if present
-             * @return the un-escaped string
-             */
-            virtual T unescape_string(T toConvert, bool only_quotes_tm) const {
-                if (only_quotes_tm) {
-                    if (toConvert.size() >= 2 && toConvert[0] == '\"' && toConvert[toConvert.size() - 1] == '\"') {
-                        return toConvert.substr(1, toConvert.size() - 2);
-                    } else {
-                        return toConvert;
-                    }
-                } else {
-                    // Create the result string
-                    T res;
-
-                    if (toConvert.size() >= 2 && toConvert[0] == '\"' && toConvert[toConvert.size() - 1] == '\"') {
-                        toConvert = toConvert.substr(1, toConvert.size() - 2);
-                    }
-
-                    // Iterate over the string to convert.
-                    // Use ptrdiff_t as type as it is the signed counterpart to size_t.
-                    for (ptrdiff_t i = 0; i < static_cast<signed>(toConvert.size()); i++) {
-                        // Only continue if the current character is a double quote
-                        // and i + 1 is smaller than the size of toConvert
-                        if (toConvert[i] == '\"' && static_cast<size_t>(i + 1) < toConvert.size()) {
-                            bool wasChanged;
-                            const C newVal = unescape_character(toConvert[i + 1], wasChanged);
-
-                            // Append the un-escaped value to the result
-                            // if the character was un-escapable
-                            if (wasChanged) {
-                                res += newVal;
-                                i++;
-                                continue;
-                            }
-                        }
-
-                        // If continue wasn't called, just add the
-                        // current char to the result string
-                        res += toConvert[i];
-                    }
-
-                    return res;
-                }
-            }
-
-            /**
-             * Find a delimiter in a string.
-             * Returns T::npos if the delimiter was not found.
-             *
-             * @param str the string to find the position of the next delimiter in
-             * @param offset the offset to start with
-             * @param delimiter the delimiter to search for
-             * @return the position of the delimiter in str
-             */
-            virtual size_t find(const T &str, size_t offset, char delimiter) const {
-                // The number of double quotes
-                short doubleQuotes = 0;
-                for (size_t pos = offset; pos < str.length(); pos++) {
-                    // If the current character is a
-                    // double quote, increase doubleQuotes
-                    if (str[pos] == '\"') {
-                        doubleQuotes = (doubleQuotes + 1) % 2;
-                    } else if (str[pos] == delimiter && doubleQuotes == 0) {
-                        // If the string at pos is the delimiter and the
-                        // number of double quotes in the last section
-                        // is even, return the position of the delimiter.
-                        return pos;
-                    }
-
-                    // Note: A valid string must contain an even number
-                    // of double quotes to be properly formatted: Each
-                    // double quote must be escaped by another double
-                    // quote (RFC 4180 section 2.7) and if there are
-                    // double quotes in a string, the whole string should
-                    // be enclosed in double quotes (RFC 4180 section 2.6).
-                }
-
-                // The number of double quotes must be even, if not, the csv string is malformed
-                if (doubleQuotes != 0) {
-                    throw exceptions::parse_error("Missing quotation mark at the end of the string");
-                } else {
-                    return T::npos;
-                }
-            }
-
-            /**
-             * Split a string by a delimiter
-             *
-             * @param str the string to split
-             * @param delimiter the delimiter to split the string by
-             * @return the string parts extracted from the string
-             */
-            virtual std::vector<T> splitString(const T &str, char delimiter) const {
-                // This implementation is based on this: https://stackoverflow.com/a/37454181
-                std::vector<T> tokens;
-                size_t pos, prev = 0;
-                do {
-                    pos = find(str, prev, delimiter);
-                    if (pos == T::npos) pos = str.length();
-                    T token = str.substr(prev, pos - prev);
-                    tokens.push_back(token);
-                    prev = pos + 1;
-                } while (pos < str.length() && prev < str.length());
-
-                // If the string ends with the delimiter character and isn't
-                // empty, add another instance of T to the result vector.
-                // This is mostly in here because a line must not end with a
-                // separator (RFC 4180 section 2.4). So if it ends with a
-                // separator, there must be another, empty cell behind that separator.
-                // However, this is not the case for new lines, as the last record in
-                // the file may or may not end with a new line (RFC 4180 section 2.2).
-                if (!str.empty() && str[str.size() - 1] == delimiter && delimiter != '\n') {
-                    tokens.push_back(T());
-                }
-
-                return tokens;
-            }
-        };
-    } // namespace util
+        out.resize(in.size());
+        return out;
+    }
 
     /**
-     * A csv column
+     * Convert a std::string to a std::wstring
+     *
+     * @param in the string to convert
+     * @return the converted wide string
+     */
+    inline std::wstring string_to_wstring(const std::string &in) {
+        std::wstring out(in.size() + 1, L' ');
+
+#ifdef CSV_WINDOWS
+        size_t outSize;
+        errno_t err = mbstowcs_s(&outSize, (wchar_t *) out.data(), out.size(), in.c_str(), in.size());
+        if (err) {
+            throw exceptions::conversion_error("Could not create the string");
+        }
+#elif defined(CSV_UNIX)
+        size_t written = mbstowcs(out.data(), in.c_str(), in.size());
+        if (written == static_cast<size_t>(-1)) {
+            throw exceptions::conversion_error("Could not convert the string");
+        }
+#endif // WINDOWS OR UNIX
+
+        out.resize(in.size());
+        return out;
+    }
+
+    /**
+     * Get a string as another string type
+     *
+     * @tparam T the string type to convert to
+     * @tparam U the type of the string to convert
+     * @param str the string to convert
+     * @return the converted string
+     */
+    template<class T, class U, CSV_ENABLE_IF(
+            (is_u8_string_v<T> || is_u16_string_v<T>) && (is_u8_string_v<U> || is_u16_string_v<U>)) >
+    inline T string_as(const U &str) {
+        static_assert(is_u8_string_v<T> || is_u16_string_v<T>);
+        static_assert(is_u8_string_v<U> || is_u16_string_v<U>);
+
+        if constexpr ((is_u8_string_v<T> && is_u8_string_v<U>) || (is_u16_string_v<T> && is_u16_string_v<U>)) {
+            return str;
+        } else if constexpr (is_u8_string_v<T> && is_u16_string_v<U>) {
+            return wstring_to_string(str);
+        } else if constexpr (is_u16_string_v<T> && is_u8_string_v<U>) {
+            return string_to_wstring(str);
+        }
+    }
+} //namespace markusjx::util
+
+#endif //MARKUSJX_CSV_UTIL_HPP
+
+namespace markusjx::util {
+    /**
+     * The default escape sequence generator.
+     * This implementation enforces the rules
+     * defined in RFC 4180.
+     *
+     * @tparam T the string type
+     * @tparam Sep the separator to use
+     * @tparam C the character type
+     */
+    template<class T, char Sep = ';', class C = typename T::value_type>
+    class escape_sequence_generator {
+    public:
+        CSV_CHECK_T_SUPPORTED
+
+        /**
+         * Escape a character
+         *
+         * @param character the character to escape
+         * @return the escaped character string
+         */
+        CSV_NODISCARD virtual T escape_character(C character) const {
+            switch (character) {
+                case '\"':
+                    return string_as<T>(std::string("\"\""));
+                default:
+                    return T(1, character);
+            }
+        }
+
+        /**
+         * Escape a string
+         *
+         * @param str the string to escape
+         * @param delimiter the delimiter used in the csv file
+         * @return the escaped string
+         */
+        CSV_NODISCARD virtual T escape_string(const T &str) const {
+            // Prepend and append a double quote to the
+            // string if it contains a new line, a double
+            // quote or a separator (RFC 4180 section 2.6)
+            if (str.find('\n') != T::npos || str.find('\"') != T::npos || str.find(Sep) != T::npos) {
+                T res;
+
+                res += '\"';
+                for (const C character : str) {
+                    res.append(escape_character(character));
+                }
+                res += '\"';
+
+                return res;
+            } else {
+                return str;
+            }
+        }
+
+        /**
+         * Un-escape a character
+         *
+         * @param character the character to un-escape
+         * @param converted will be set to true if the character could be un-escaped
+         * @return the un-escaped character
+         */
+        CSV_NODISCARD virtual C unescape_character(C character, bool &converted) const {
+            switch (character) {
+                case '\"':
+                    converted = true;
+                    return static_cast<C>('\"');
+                default:
+                    converted = false;
+                    return character;
+            }
+        }
+
+        /**
+         * Un-escape a string
+         *
+         * @param toConvert the string to un-escape
+         * @param only_quotes_tm whether to only remove leading and trailing quotes if present
+         * @return the un-escaped string
+         */
+        CSV_NODISCARD virtual T unescape_string(T toConvert, bool only_quotes_tm) const {
+            if (only_quotes_tm) {
+                if (toConvert.size() >= 2 && toConvert[0] == '\"' && toConvert[toConvert.size() - 1] == '\"') {
+                    return toConvert.substr(1, toConvert.size() - 2);
+                } else {
+                    return toConvert;
+                }
+            } else {
+                // Create the result string
+                T res;
+
+                if (toConvert.size() >= 2 && toConvert[0] == '\"' && toConvert[toConvert.size() - 1] == '\"') {
+                    toConvert = toConvert.substr(1, toConvert.size() - 2);
+                }
+
+                // Iterate over the string to convert.
+                // Use ptrdiff_t as type as it is the signed counterpart to size_t.
+                for (ptrdiff_t i = 0; i < static_cast<signed>(toConvert.size()); i++) {
+                    // Only continue if the current character is a double quote
+                    // and i + 1 is smaller than the size of toConvert
+                    if (toConvert[i] == '\"' && static_cast<size_t>(i + 1) < toConvert.size()) {
+                        bool wasChanged;
+                        const C newVal = unescape_character(toConvert[i + 1], wasChanged);
+
+                        // Append the un-escaped value to the result
+                        // if the character was un-escapable
+                        if (wasChanged) {
+                            res += newVal;
+                            i++;
+                            continue;
+                        }
+                    }
+
+                    // If continue wasn't called, just add the
+                    // current char to the result string
+                    res += toConvert[i];
+                }
+
+                return res;
+            }
+        }
+
+        /**
+         * Find a delimiter in a string.
+         * Returns T::npos if the delimiter was not found.
+         *
+         * @param str the string to find the position of the next delimiter in
+         * @param offset the offset to start with
+         * @param delimiter the delimiter to search for
+         * @return the position of the delimiter in str
+         */
+        CSV_NODISCARD virtual size_t find(const T &str, size_t offset, char delimiter) const {
+            // The number of double quotes
+            short doubleQuotes = 0;
+            for (size_t pos = offset; pos < str.length(); pos++) {
+                // If the current character is a
+                // double quote, increase doubleQuotes
+                if (str[pos] == '\"') {
+                    doubleQuotes = (doubleQuotes + 1) % 2;
+                } else if (str[pos] == delimiter && doubleQuotes == 0) {
+                    // If the string at pos is the delimiter and the
+                    // number of double quotes in the last section
+                    // is even, return the position of the delimiter.
+                    return pos;
+                }
+
+                // Note: A valid string must contain an even number
+                // of double quotes to be properly formatted: Each
+                // double quote must be escaped by another double
+                // quote (RFC 4180 section 2.7) and if there are
+                // double quotes in a string, the whole string should
+                // be enclosed in double quotes (RFC 4180 section 2.6).
+            }
+
+            // The number of double quotes must be even, if not, the csv string is malformed
+            if (doubleQuotes != 0) {
+                throw exceptions::parse_error("Missing quotation mark at the end of the string");
+            } else {
+                return T::npos;
+            }
+        }
+
+        /**
+         * Split a string by a delimiter
+         *
+         * @param str the string to split
+         * @param delimiter the delimiter to split the string by
+         * @return the string parts extracted from the string
+         */
+        CSV_NODISCARD virtual std::vector<T> splitString(const T &str, char delimiter) const {
+            // This implementation is based on this: https://stackoverflow.com/a/37454181
+            std::vector<T> tokens;
+            size_t pos, prev = 0;
+            do {
+                pos = find(str, prev, delimiter);
+                if (pos == T::npos) pos = str.length();
+                T token = str.substr(prev, pos - prev);
+                tokens.push_back(token);
+                prev = pos + 1;
+            } while (pos < str.length() && prev < str.length());
+
+            // If the string ends with the delimiter character and isn't
+            // empty, add another instance of T to the result vector.
+            // This is mostly in here because a line must not end with a
+            // separator (RFC 4180 section 2.4). So if it ends with a
+            // separator, there must be another, empty cell behind that separator.
+            // However, this is not the case for new lines, as the last record in
+            // the file may or may not end with a new line (RFC 4180 section 2.2).
+            if (!str.empty() && str[str.size() - 1] == delimiter && delimiter != '\n') {
+                tokens.push_back(T());
+            }
+
+            return tokens;
+        }
+    };
+} //namespace markusjx::util
+
+#endif //MARKUSJX_CSV_ESCAPE_SEQUENCE_GENERATOR_HPP
+
+#ifndef MARKUSJX_CSV_BASIC_CSV_HPP
+#define MARKUSJX_CSV_BASIC_CSV_HPP
+
+#include <cstring>
+#include <vector>
+#include <ostream>
+
+#ifndef MARKUSJX_CSV_CSV_CELL_HPP
+#define MARKUSJX_CSV_CSV_CELL_HPP
+
+#include <cstring>
+#include <string>
+#include <regex>
+
+namespace markusjx {
+    /**
+     * A csv cell
      *
      * @tparam T the string type. Must be a std::string or std::wstring
      * @tparam Sep the separator to use
@@ -1477,7 +1486,23 @@ namespace markusjx {
         // The string value stored in this column
         T value;
     };
+} //namespace markusjx
 
+#endif //MARKUSJX_CSV_CSV_CELL_HPP
+
+#ifndef MARKUSJX_CSV_CSV_ROW_HPP
+#define MARKUSJX_CSV_CSV_ROW_HPP
+
+#include <cstring>
+#include <vector>
+
+#ifndef MARKUSJX_CSV_CONST_CSV_ROW_HPP
+#define MARKUSJX_CSV_CONST_CSV_ROW_HPP
+
+#include <cstring>
+#include <vector>
+
+namespace markusjx {
     /**
      * A constant csv row
      *
@@ -1738,7 +1763,11 @@ namespace markusjx {
         // The cells in this row
         std::vector<csv_cell<T, Sep, _escape_generator_>> cells;
     };
+} //namespace markusjx
 
+#endif //MARKUSJX_CSV_CONST_CSV_ROW_HPP
+
+namespace markusjx {
     /**
      * A csv row
      *
@@ -2002,7 +2031,14 @@ namespace markusjx {
             }
         }
     };
+} //namespace markusjx
 
+#endif //MARKUSJX_CSV_CSV_ROW_HPP
+
+#ifndef MARKUSJX_CSV_BASIC_CSV_FILE_DEF_HPP
+#define MARKUSJX_CSV_BASIC_CSV_FILE_DEF_HPP
+
+namespace markusjx {
     /**
      * A csv file
      *
@@ -2012,7 +2048,11 @@ namespace markusjx {
      */
     template<class T, char Sep = ';', class _escape_generator_ = util::escape_sequence_generator<util::std_basic_string<T>, Sep>>
     class basic_csv_file;
+} //namespace markusjx
 
+#endif //MARKUSJX_CSV_BASIC_CSV_FILE_DEF_HPP
+
+namespace markusjx {
     /**
      * A csv object
      *
@@ -2156,7 +2196,7 @@ namespace markusjx {
          * @param file the csv file object to convert
          */
         template<class U, CSV_ENABLE_IF(util::is_any_of_v<U, char, wchar_t> &&
-                                                std::is_same_v<std::basic_string<U, std::char_traits<U>, std::allocator<U>>, T>) >
+        std::is_same_v<std::basic_string<U, std::char_traits<U>, std::allocator<U>>, T>) >
         basic_csv(basic_csv_file<U, Sep, _escape_generator_> &file) : rows() {
             basic_csv<T, Sep, _escape_generator_> converted = file.to_basic_csv();
             rows = std::move(converted.rows);
@@ -2170,7 +2210,7 @@ namespace markusjx {
          * @return this, after the assignment
          */
         template<class U, CSV_ENABLE_IF(util::is_any_of_v<U, char, wchar_t> &&
-                                                std::is_same_v<std::basic_string<U, std::char_traits<U>, std::allocator<U>>, T>) >
+        std::is_same_v<std::basic_string<U, std::char_traits<U>, std::allocator<U>>, T>) >
         basic_csv &operator=(basic_csv_file<U, Sep, _escape_generator_> &file) {
             return this->operator=(std::move(file.to_basic_csv()));
         }
@@ -2699,7 +2739,19 @@ namespace markusjx {
         // The rows in this csv object
         std::vector<csv_row<T, Sep, _escape_generator_>> rows;
     };
+} //namespace markusjx
 
+#endif //MARKUSJX_CSV_BASIC_CSV_HPP
+
+#ifndef MARKUSJX_CSV_BASIC_CSV_FILE_HPP
+#define MARKUSJX_CSV_BASIC_CSV_FILE_HPP
+
+#include <cstring>
+#include <vector>
+#include <map>
+#include <fstream>
+
+namespace markusjx {
     template<class T, char Sep, class _escape_generator_>
     class basic_csv_file {
     public:
@@ -3386,7 +3438,11 @@ namespace markusjx {
         // The zero-based index of the current line
         uint64_t currentLine;
     };
+} //namespace markusjx
 
+#endif //MARKUSJX_CSV_BASIC_CSV_FILE_HPP
+
+namespace markusjx {
     /**
      * A utf-8 csv object
      */
@@ -3406,7 +3462,7 @@ namespace markusjx {
      * A utf-16 csv file
      */
     using w_csv_file = basic_csv_file<wchar_t, MARKUSJX_CSV_SEPARATOR, util::escape_sequence_generator<util::std_basic_string<wchar_t>, MARKUSJX_CSV_SEPARATOR>>;
-}
+} //namespace markusjx
 
 namespace std {
     template<class T, char Sep, class _gen_>
@@ -3420,10 +3476,24 @@ namespace std {
     }
 }
 
+/**
+ * Operator ""
+ *
+ * @param str the string to parse
+ * @param len the length of the string
+ * @return the parsed csv object
+ */
 inline markusjx::csv operator "" __csv(const char *str, size_t len) {
     return markusjx::csv::parse(std::string(str, len));
 }
 
+/**
+ * Operator ""
+ *
+ * @param str the string to parse
+ * @param len the length of the string
+ * @return the parsed csv object
+ */
 inline markusjx::w_csv operator "" __csv(const wchar_t *str, size_t len) {
     return markusjx::w_csv::parse(std::wstring(str, len));
 }
@@ -3436,4 +3506,4 @@ inline markusjx::w_csv operator "" __csv(const wchar_t *str, size_t len) {
 #undef CSV_REQUIRES
 #undef CSV_ENABLE_IF
 
-#endif //MARKUSJX_CSV_HPP
+#endif //MARKUSJX_CSV_CSV_HPP

@@ -1,9 +1,8 @@
 #include <iostream>
-#include <fstream>
 #include <random>
 #include <gtest/gtest.h>
 
-#include "csv.hpp"
+#include <csv.hpp>
 
 #define CSV_ASSERT_NUM_MATCH() ASSERT_EQ(csv.numElements(), static_cast<uint64_t>((index + 1) * numValues))
 
