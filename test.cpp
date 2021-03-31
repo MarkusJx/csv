@@ -222,8 +222,8 @@ TEST_F(ConstructorTest, fromVectorTest) {
 }
 
 TEST_F(ConstructorTest, fromInitializerListTest) {
-    markusjx::csv csv = {{"abc;", 1,  5,    'd',   false},
-                         {25,    42, true, "def\n", nullptr, "ye"}};
+    markusjx::csv csv = {{"abc;", 1,  5,    'd',     false},
+                         {25,     42, true, "def\n", nullptr, "ye"}};
     EXPECT_EQ(csv.numElements(), static_cast<uint64_t>(11));
 }
 
@@ -265,6 +265,39 @@ TEST_F(ConstructorTest, newLineTest) {
     markusjx::csv csv2 = markusjx::csv::parse(csv1.to_string());
     EXPECT_EQ(csv1.size(), csv2.size());
     EXPECT_EQ(csv1, csv2);
+}
+
+TEST_F(ConstructorTest, fromStringLiteralTest) {
+    {
+        markusjx::csv c1 = "abc;def;123;true\n\"gh;ij\";456"__csv;
+        markusjx::csv c2 = {
+                {"abc",   "def", 123, true},
+                {"gh;ij", 456}
+        };
+
+        EXPECT_EQ(c1, c2);
+    }
+
+    {
+        markusjx::csv c1 = R"(abc;def;123;true
+"gh;ij";456)"__csv;
+        markusjx::csv c2 = {
+                {"abc",   "def", 123, true},
+                {"gh;ij", 456}
+        };
+
+        EXPECT_EQ(c1, c2);
+    }
+
+    {
+        markusjx::w_csv c1 = L"abc;def;123;true\n\"gh;ij\";456"__csv;
+        markusjx::w_csv c2 = {
+                {"abc",   "def", 123, true},
+                {"gh;ij", 456}
+        };
+
+        EXPECT_EQ(c1, c2);
+    }
 }
 
 class EqualityTest : public CSVTestBase {
@@ -809,37 +842,37 @@ TEST_F(CSVFileTest, randomWriteTest) {
 
 TEST_F(CSVFileTest, randomReadTest) {
     //for (int x = 0; x < 1000; x++) {
-        std::remove("test.csv");
-        markusjx::csv_file file("test.csv", 1000);
-        markusjx::csv csv;
+    std::remove("test.csv");
+    markusjx::csv_file file("test.csv", 1000);
+    markusjx::csv csv;
 
-        for (int i = 0; i < 1000; i++) {
-            const int n = getRandomInt();
-            const std::string s = getRandomString(20);
-            const bool b = getRandomBool();
-            const double d = getRandomDouble();
+    for (int i = 0; i < 1000; i++) {
+        const int n = getRandomInt();
+        const std::string s = getRandomString(20);
+        const bool b = getRandomBool();
+        const double d = getRandomDouble();
 
-            file << n << s << b << d << nullptr << markusjx::csv::endl;
-            csv << n << s << b << d << nullptr << markusjx::csv::endl;
-        }
+        file << n << s << b << d << nullptr << markusjx::csv::endl;
+        csv << n << s << b << d << nullptr << markusjx::csv::endl;
+    }
 
-        file.flush();
+    file.flush();
 
-        for (int i = 0; i < 100; i++) {
-            const int pos = std::abs(getRandomInt() % 1000);
+    for (int i = 0; i < 100; i++) {
+        const int pos = std::abs(getRandomInt() % 1000);
 
-            /*if (file[pos] != csv[pos]) {
-                EXPECT_EQ(file[pos], csv[pos]) << file[pos] << "\n" << csv[pos] << "\n" << pos;
-                //std::cout << file[pos] << std::endl << csv[pos] << std::endl;
-            }//*/
+        /*if (file[pos] != csv[pos]) {
             EXPECT_EQ(file[pos], csv[pos]) << file[pos] << "\n" << csv[pos] << "\n" << pos;
-        }
+            //std::cout << file[pos] << std::endl << csv[pos] << std::endl;
+        }//*/
+        EXPECT_EQ(file[pos], csv[pos]) << file[pos] << "\n" << csv[pos] << "\n" << pos;
+    }
 
-        //std::cout << "Run: " << (x + 1) << std::endl;
+    //std::cout << "Run: " << (x + 1) << std::endl;
 
-        EXPECT_EQ(file[999], csv[999]) << file[999] << "\n" << csv[999];
-        EXPECT_EQ(file.to_basic_csv(), csv);
-        std::remove("test.csv");
+    EXPECT_EQ(file[999], csv[999]) << file[999] << "\n" << csv[999];
+    EXPECT_EQ(file.to_basic_csv(), csv);
+    std::remove("test.csv");
     //}
 }
 

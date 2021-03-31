@@ -77,6 +77,10 @@
 #define CSV_CHECK_T_SUPPORTED static_assert(::markusjx::util::is_u8_string_v<T> || ::markusjx::util::is_u16_string_v<T>,\
                                             "T must be one of: [std::string, std::wstring]");
 
+#ifndef MARKUSJX_CSV_SEPARATOR
+#   define MARKUSJX_CSV_SEPARATOR ';'
+#endif //MARKUSJX_CSV_SEPARATOR
+
 namespace markusjx {
     /**
      * A namespace for exceptions
@@ -520,6 +524,7 @@ namespace markusjx {
          * The string type
          */
         using string_type = T;
+        using char_type = typename string_type::value_type;
 
         /**
          * Parse a column value
@@ -738,6 +743,46 @@ namespace markusjx {
             }
 
             return *this;
+        }
+
+        /**
+         * Get the character at an index
+         *
+         * @param index the index of the character
+         * @return the character reference
+         */
+        char_type &at(size_t index) {
+            return this->as<T>().at(index);
+        }
+
+        /**
+         * Get the character at an index
+         *
+         * @param index the index of the character
+         * @return the character reference
+         */
+        CSV_NODISCARD const char_type &at(size_t index) const {
+            return this->as<T>().at(index);
+        }
+
+        /**
+         * Get the character at an index
+         *
+         * @param index the index of the character
+         * @return the character reference
+         */
+        char_type &operator[](size_t index) {
+            return this->at(index);
+        }
+
+        /**
+         * Get the character at an index
+         *
+         * @param index the index of the character
+         * @return the character reference
+         */
+        CSV_NODISCARD const char_type &operator[](size_t index) const {
+            return this->at(index);
         }
 
         /**
@@ -962,7 +1007,7 @@ namespace markusjx {
             if (this == &other) {
                 return true;
             } else {
-                return this->rawValue() == other.rawValue();
+                return this->operator T() == other.operator T();
             }
         }
 
@@ -976,7 +1021,7 @@ namespace markusjx {
             if (this == &other) {
                 return false;
             } else {
-                return this->rawValue() != other.rawValue();
+                return this->operator T() != other.operator T();
             }
         }
 
@@ -996,7 +1041,7 @@ namespace markusjx {
             } else if (this->isDecimal() && other.isDecimal()) {
                 return this->as<long long>() < other.as<long long>();
             } else {
-                return this->value < other.value;
+                return this->operator T() < other.operator T();
             }
         }
 
@@ -1028,7 +1073,7 @@ namespace markusjx {
             } else if (this->isDecimal() && other.isDecimal()) {
                 return this->as<long long>() <= other.as<long long>();
             } else {
-                return this->value <= other.value;
+                return this->operator T() <= other.operator T();
             }
         }
 
@@ -1060,7 +1105,7 @@ namespace markusjx {
             } else if (this->isDecimal() && other.isDecimal()) {
                 return this->as<long long>() > other.as<long long>();
             } else {
-                return this->value > other.value;
+                return this->operator T() > other.operator T();
             }
         }
 
@@ -1092,7 +1137,7 @@ namespace markusjx {
             } else if (this->isDecimal() && other.isDecimal()) {
                 return this->as<long long>() >= other.as<long long>();
             } else {
-                return this->value >= other.value;
+                return this->operator T() >= other.operator T();
             }
         }
 
@@ -1330,12 +1375,30 @@ namespace markusjx {
         }
 
         /**
+         * Get the size of the string value
+         *
+         * @return the size of the string value
+         */
+        CSV_NODISCARD size_t size() const {
+            return this->as<T>().size();
+        }
+
+        /**
+         * Get the length of the string value
+         *
+         * @return the length of the string value
+         */
+        CSV_NODISCARD size_t length() const {
+            return this->as<T>().length();
+        }
+
+        /**
          * Check if this column is empty
          *
          * @return true if this column is empty
          */
         CSV_NODISCARD bool empty() const {
-            return value.empty();
+            return this->as<T>().empty();
         }
 
         /**
@@ -1344,8 +1407,7 @@ namespace markusjx {
          * @return true if this is a number
          */
         CSV_NODISCARD bool isNumber() const {
-            using C = typename T::value_type;
-            const std::basic_regex<C> number_regex(util::string_as<T>(std::string("^-?[0-9]+(\\.[0-9]+)?$")));
+            const std::basic_regex<char_type> number_regex(util::string_as<T>(std::string("^-?[0-9]+(\\.[0-9]+)?$")));
             return std::regex_match(value, number_regex);
         }
 
@@ -1355,8 +1417,7 @@ namespace markusjx {
          * @return true if this is a decimal
          */
         CSV_NODISCARD bool isDecimal() const {
-            using C = typename T::value_type;
-            const std::basic_regex<C> decimal_regex(util::string_as<T>(std::string("^-?[0-9]+$")));
+            const std::basic_regex<char_type> decimal_regex(util::string_as<T>(std::string("^-?[0-9]+$")));
             return std::regex_match(value, decimal_regex);
         }
 
@@ -1366,8 +1427,7 @@ namespace markusjx {
          * @return true if this is a floating point integer
          */
         CSV_NODISCARD bool isFloatingPoint() const {
-            using C = typename T::value_type;
-            const std::basic_regex<C> float_regex(util::string_as<T>(std::string("^-?[0-9]+\\.[0-9]+$")));
+            const std::basic_regex<char_type> float_regex(util::string_as<T>(std::string("^-?[0-9]+\\.[0-9]+$")));
             return std::regex_match(value, float_regex);
         }
 
@@ -1377,9 +1437,17 @@ namespace markusjx {
          * @return true if this cell is a boolean
          */
         CSV_NODISCARD bool isBoolean() const {
-            using C = typename T::value_type;
-            const std::basic_regex<C> bool_regex(util::string_as<T>(std::string("^(true)|(false)$")));
+            const std::basic_regex<char_type> bool_regex(util::string_as<T>(std::string("^(true)|(false)$")));
             return std::regex_match(value, bool_regex);
+        }
+
+        /**
+         * Check if this cell is a character
+         *
+         * @return true if this cell is a char
+         */
+        CSV_NODISCARD bool isChar() const {
+            return this->length() == 1;
         }
 
     private:
@@ -1639,7 +1707,7 @@ namespace markusjx {
          */
         template<class U>
         CSV_NODISCARD T to_string_impl(size_t len) const {
-            const size_t max = std::max(cells.size(), len);
+            const size_t max = std::max(this->size(), len);
             U ss;
 
             // Write all values with the separator at the end to the stream
@@ -1874,7 +1942,7 @@ namespace markusjx {
             return this->cells.emplace_back(nullptr);
         }
 
-        CSV_NODISCARD const_cell_iterator begin() const noexcept {
+        CSV_NODISCARD const_cell_iterator begin() const noexcept override {
             return this->cells.begin();
         }
 
@@ -1887,7 +1955,7 @@ namespace markusjx {
             return this->cells.begin();
         }
 
-        CSV_NODISCARD const_cell_iterator end() const noexcept {
+        CSV_NODISCARD const_cell_iterator end() const noexcept override {
             return this->cells.end();
         }
 
@@ -3280,22 +3348,42 @@ namespace markusjx {
     /**
      * A utf-8 csv object
      */
-    using csv = basic_csv<std::string, ';', util::escape_sequence_generator<std::string, ';'>>;
+    using csv = basic_csv<std::string, MARKUSJX_CSV_SEPARATOR, util::escape_sequence_generator<std::string, MARKUSJX_CSV_SEPARATOR>>;
 
     /**
      * A utf-16 csv object
      */
-    using w_csv = basic_csv<std::wstring, ';', util::escape_sequence_generator<std::wstring, ';'>>;
+    using w_csv = basic_csv<std::wstring, MARKUSJX_CSV_SEPARATOR, util::escape_sequence_generator<std::wstring, MARKUSJX_CSV_SEPARATOR>>;
 
     /**
      * A utf-8 csv file
      */
-    using csv_file = basic_csv_file<char, ';', util::escape_sequence_generator<util::std_basic_string<char>, ';'>>;
+    using csv_file = basic_csv_file<char, MARKUSJX_CSV_SEPARATOR, util::escape_sequence_generator<util::std_basic_string<char>, MARKUSJX_CSV_SEPARATOR>>;
 
     /**
      * A utf-16 csv file
      */
-    using w_csv_file = basic_csv_file<wchar_t, ';', util::escape_sequence_generator<util::std_basic_string<wchar_t>, ';'>>;
+    using w_csv_file = basic_csv_file<wchar_t, MARKUSJX_CSV_SEPARATOR, util::escape_sequence_generator<util::std_basic_string<wchar_t>, MARKUSJX_CSV_SEPARATOR>>;
+}
+
+namespace std {
+    template<class T, char Sep, class _gen_>
+    inline markusjx::basic_csv<T, Sep, _gen_> &endl(markusjx::basic_csv<T, Sep, _gen_> &csv) {
+        return csv.endline();
+    }
+
+    template<class T, char Sep, class _gen_>
+    inline markusjx::basic_csv_file<T, Sep, _gen_> &endl(markusjx::basic_csv_file<T, Sep, _gen_> &file) {
+        return file.endline();
+    }
+}
+
+inline markusjx::csv operator "" __csv(const char *str, size_t len) {
+    return markusjx::csv::parse(std::string(str, len));
+}
+
+inline markusjx::w_csv operator "" __csv(const wchar_t *str, size_t len) {
+    return markusjx::w_csv::parse(std::wstring(str, len));
 }
 
 // Un-define everything
