@@ -599,3 +599,6 @@ using custom_csv = markusjx::basic_csv<std::string, ','>;
 // Define a custom csv file type
 using custom_csv_file = markusjx::basic_csv_file<std::string, ','>;
 ```
+
+## License
+This project is licensed under the [MIT License](LICENSE).
