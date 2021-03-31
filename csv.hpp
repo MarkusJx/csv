@@ -1615,9 +1615,9 @@ namespace markusjx {
                 return true;
             }
 
-            if (this->size() == other.size()) {
+            if (this->min_size() == other.min_size()) {
                 // If the sizes match, compare the individual values of the cells
-                for (size_t i = 0; i < this->size(); i++) {
+                for (size_t i = 0; i < this->min_size(); i++) {
                     if (this->at(i) != other.at(i)) {
                         return false;
                     }
@@ -1663,6 +1663,15 @@ namespace markusjx {
          * @return the number of cells in this row
          */
         CSV_NODISCARD size_t size() const noexcept {
+            return cells.size();
+        }
+
+        /**
+         * Get the minimum size of this row (excluding all empty cells at the end)
+         *
+         * @return the minimum size of this row
+         */
+        CSV_NODISCARD size_t min_size() const noexcept {
             size_t sz = cells.size();
             for (ptrdiff_t i = static_cast<signed>(cells.size()) - 1; i >= 0 && cells[i].empty(); i--) {
                 sz--;
@@ -1707,7 +1716,7 @@ namespace markusjx {
          */
         template<class U>
         CSV_NODISCARD T to_string_impl(size_t len) const {
-            const size_t max = std::max(this->size(), len);
+            const size_t max = std::max(this->min_size(), len);
             U ss;
 
             // Write all values with the separator at the end to the stream
@@ -1978,10 +1987,19 @@ namespace markusjx {
         /**
          * Remove a value from this row
          *
-         * @param index the index of the value to remove
+         * @param index the index of the cell to remove
          */
         void remove(size_t index) {
             this->cells.erase(this->cells.begin() + index);
+        }
+
+        /**
+         * Remove all empty cells at the end of this row
+         */
+        void strip() {
+            while (this->cells.end() > this->cells.begin() && (this->cells.end() - 1)->empty()) {
+                this->cells.pop_back();
+            }
         }
     };
 
@@ -2507,6 +2525,22 @@ namespace markusjx {
         }
 
         /**
+         * Remove all empty cells at the end of all rows
+         * and remove all empty rows at the end of this object
+         */
+        void strip() {
+            // Strip all rows
+            for (csv_row<T, Sep, _escape_generator_> &row : rows) {
+                row.strip();
+            }
+
+            // Remove all empty rows from the end of the row vector
+            while (rows.end() > rows.begin() && (rows.end() - 1)->empty()) {
+                rows.pop_back();
+            }
+        }
+
+        /**
          * Get the length of the longest row in this csv object
          *
          * @return the length of the longest row
@@ -2514,8 +2548,8 @@ namespace markusjx {
         CSV_NODISCARD size_t maxRowLength() const {
             size_t max = 0;
             for (const csv_row<T, Sep, _escape_generator_> &row : rows) {
-                if (row.size() > max) {
-                    max = row.size();
+                if (row.min_size() > max) {
+                    max = row.min_size();
                 }
             }
 
@@ -2757,13 +2791,14 @@ namespace markusjx {
          * @param el the object to write
          * @return this
          */
-        basic_csv_file &operator<<(const basic_csv<string_type, Sep, _escape_generator_> &el) {
+        basic_csv_file &operator<<(const basic_csv<string_type, Sep, _escape_generator_> &csv) {
+            // Get the current line
             const const_csv_row<string_type, Sep, _escape_generator_> line = getCurrentLine();
 
-            // Assign el to csv and add el[0] to the existing
-            // line and push all of that into csv[o]
-            basic_csv<string_type, Sep, _escape_generator_> csv = el;
-            csv[0] = line + el[0];
+            // Add a new line if the current line is not empty
+            if (!line.empty()) {
+                this->endline();
+            }
 
             for (ptrdiff_t i = 0; i < static_cast<signed>(csv.size()); i++) {
                 cache.insert_or_assign(currentLine, csv[i]);
@@ -3054,6 +3089,13 @@ namespace markusjx {
             }
         }
 
+        /**
+         * Get a line from the csv file.
+         * Returns an empty line if not found.
+         *
+         * @param line the line to find
+         * @return the line read from the file
+         */
         CSV_NODISCARD csv_row<string_type, Sep, _escape_generator_> getLineFromFile(uint64_t line) const {
             if (line > getTranslatedMaxLineIndex()) {
                 throw exceptions::index_out_of_range_error("The requested line is out of range");

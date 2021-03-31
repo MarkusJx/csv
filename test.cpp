@@ -173,6 +173,22 @@ TEST_F(CSVTest, emptyCheck) {
     ASSERT_EQ(csv.numElements(), static_cast<uint64_t>(0));
 }
 
+TEST_F(CSVTest, stripTest) {
+    markusjx::csv c = ";;;;\n;;;;";
+    c.strip();
+
+    ASSERT_TRUE(c.empty());
+
+    c = {
+            {"a", "", ""},
+            {"", ""}
+    };
+
+    c.strip();
+    ASSERT_EQ(c.maxRowLength(), static_cast<size_t>(1));
+    ASSERT_EQ(c, markusjx::csv::parse("a"));
+}
+
 TEST_F(CSVTest, integerTest) {
     csv_test<int>(0, [this] { return getRandomInt(); });;
 }

@@ -1,5 +1,5 @@
 # csv
-A C++ header-only RFC 4180 compliant CSV parser/writer.
+A C++ header-only [RFC 4180](https://tools.ietf.org/html/rfc4180) compliant CSV (Comma-Separated Values) parser/writer.
 
 ## Examples
 ### Instantiation
@@ -244,6 +244,84 @@ csv[0][0] += "abc";
 // The result will be a string
 ```
 
+#### Iterating over all rows
+To iterate over all rows you can either use indices:
+```c++
+for (size_t i = 0; i < csv.size(); i++) {
+    // Get the row at index i
+    const auto row = csv[i];
+}
+```
+
+or you could use iterators:
+```c++
+for (const auto &row : csv) {
+    // Do something with that info
+}
+```
+
+#### Iterating over all cells
+Again, you can iterate over all cells either using indices:
+```c++
+for (size_t i = 0; i < csv.size(); i++) {
+    for (size_t j = 0; j < csv[i].size(); j++) {
+        // Get the cell at index j
+        const auto cell = csv[i][j];
+    }
+}
+```
+
+or using iterators:
+```c++
+for (const auto &row : csv) {
+    for (const auto &cell : row) {
+        // Do something with the cell
+    }
+}
+```
+
+#### Deleting rows
+Delete rows using ``markusjx::basic_csv::remove(size_t)``:
+```c++
+// Delete the first row
+csv.remove(0);
+```
+
+#### Deleting cells
+Delete cells from a row using ``markusjx::csv_row::remove(size_t)``:
+```c++
+// Delete the first cell in the first row
+csv[0].remove(0);
+```
+
+#### Clearing the csv object
+To remove all values from a csv object use ``markusjx::basic_csv::clear()``:
+```c++
+csv.clear();
+// csv is empty now
+```
+
+#### Clearing a csv row
+To remove all cells from a csv row use ``markusjx::csv_row::clear()``:
+```c++
+// Clear the first row in the csv object
+csv[0].clear();
+// csv[0] is empty now
+```
+
+#### Remove all empty cells/rows
+Remove all empty cells at the end of a row:
+```c++
+auto &row = csv[0];
+row.strip();
+```
+
+Remove all empty cells at the end of all rows and remove
+all empty rows at the end of the csv object:
+```c++
+csv.strip();
+```
+
 ### Comparisons
 You can compare cells with any other cells or raw values.
 #### Number comparisons
@@ -390,6 +468,87 @@ std::wstring data = wcsv[0][0];
 std::string data = wcsv[0][0];
 ```
 
+### Working with csv files
+To reduce the memory footprint of your application, you can use the ``csv_file`` class to work with csv files.
+For working with wide strings use the ``w_csv_file`` class.
+
+#### Instantiation
+Read a file called ``file.csv``:
+```c++
+csv_file file("file.csv");
+```
+
+#### Reading/Writing data
+Read and write operations are equal to those in ``markusjx::basic_csv``:
+```c++
+// Using operator<<
+file << "abc" << 123 << false;
+
+// Using operator[]
+file[1][0] = 456;
+
+// Reading is also the same
+int read = file[1][0];
+
+// Delete a row
+file.remove(0);
+
+// End lines either using
+file << markusjx::csv_file::endl;
+// or
+file << markusjx::csv::endl;
+// or
+file << std::endl;
+//or
+file.endline();
+```
+
+Write all unwritten changes to the actual file:
+```c++
+file.flush();
+```
+
+#### Conversion between ``basic_csv_file`` and ``basic_csv``
+##### Reading a ``basic_csv_file`` to a ``basic_csv`` object
+This will call ``basic_csv_file::flush()`` which will
+write the whole contents of the data cache to the file
+before reading everything into the csv file. The csv
+object may or may not contain data, the read rows
+will be appended to the already existing rows.
+No already existing rows will be modified.
+```c++
+markusjx::csv_file file("file.csv");
+markusjx::csv csv;
+
+// Read all data into the csv object
+file >> csv;
+```
+
+##### Writing a ``basic_csv`` object to a ``basic_csv_file``
+When writing to a file, the file may or may not already
+contain data. If it does already contain data, the rows
+of the csv object will be appended to the list of already
+existing rows in the file. Once the operation is complete,
+all data will be immediately written to the file, ignoring
+the maximum cache size. After the operation, the cache will
+be empty.
+```c++
+markusjx::csv_file file("file.csv");
+markusjx::csv csv;
+
+// Write some data to the csv object...
+
+// Write the csv object to the file
+file << csv;
+```
+
+#### Implementation notes
+* ``markusjx::basic_csv_file`` is **not** RFC 4180 compliant, writing new lines to cells is prohibited
+* All values written are first written to a cache whose max size can be set using the
+  second argument in the ``markusjx::basic_csv_file`` constructor
+* The csv files are also available as utf-16 using ``w_csv_file``
+* ``strip()`` is not available for ``markusjx::basic_csv_file``
+
 ## Supported data types
 The supported data types are all types that are
 convertible from and to string,
@@ -404,15 +563,15 @@ which are the following:
 * ``float``
 * ``bool``
 * ``const char *`` (write-only, not readable)
-* ``std::string`` (when using utf-8/ASCII strings)
-* ``char`` (when using utf-8/ASCII strings)
+* ``std::string`` (when using utf-8/ASCII strings, write-only when using utf-16 strings)
+* ``char`` (when using utf-8/ASCII strings, write-only when using utf-16 strings)
 * ``const wchar_t *`` (write-only, not readable, only available when using utf-16 strings)
 * ``std::wstring`` (when using utf-16 strings)
 * ``wchar_t`` (when using utf-16 strings)
 
 **Note: Any value can be converted to a string value**
 
-## Implementation notes
+## General implementation notes
 * A cell may contain a new line or a separator.
   In this case, the whole cell value will be wrapped in double quotes (RFC 4180 section 2.6).
 * A cell may contain double quotes.
