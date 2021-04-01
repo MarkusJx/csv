@@ -13,6 +13,7 @@
 #include "csv_row.hpp"
 #include "basic_csv_file_def.hpp"
 #include "basic_csv.hpp"
+#include "index_iterator.hpp"
 
 namespace markusjx {
     template<class T, char Sep, class _escape_generator_>
@@ -29,6 +30,9 @@ namespace markusjx {
         // The cache iterators
         using cache_iterator = typename std::map<uint64_t, csv_row<string_type, Sep, _escape_generator_>>::iterator;
         using const_cache_iterator = typename std::map<uint64_t, csv_row<string_type, Sep, _escape_generator_>>::const_iterator;
+
+        using iterator = index_iterator<basic_csv_file<T, Sep, _escape_generator_>, csv_row<string_type, Sep, _escape_generator_>>;
+        using const_iterator = const_index_iterator<basic_csv_file<T, Sep, _escape_generator_>, const_csv_row<string_type, Sep, _escape_generator_>>;
 
         /**
          * Create a csv file
@@ -196,6 +200,11 @@ namespace markusjx {
          * @return the row
          */
         csv_row<string_type, Sep, _escape_generator_> &at(uint64_t line) {
+            // Write the cache to the file if it's full
+            if (cache.find(line) == cache.end() && getCacheSize() >= maxCached) {
+                writeCacheToFile();
+            }
+
             translateLine(line);
             return getOrCreateLine(line);
         }
@@ -220,6 +229,42 @@ namespace markusjx {
          */
         csv_row<string_type, Sep, _escape_generator_> &operator[](uint64_t line) {
             return this->at(line);
+        }
+
+        /**
+         * Get the begin iterator
+         *
+         * @return the begin iterator
+         */
+        iterator begin() {
+            return iterator(this, 0);
+        }
+
+        /**
+         * Get the const begin iterator
+         *
+         * @return the const begin iterator
+         */
+        const_iterator begin() const {
+            return const_iterator(this, 0);
+        }
+
+        /**
+         * Get the end iterator
+         *
+         * @return the end iterator
+         */
+        iterator end() {
+            return iterator(this, size());
+        }
+
+        /**
+         * Get the const end iterator
+         *
+         * @return the const end iterator
+         */
+        const_iterator end() const {
+            return const_iterator(this, size());
         }
 
         /**

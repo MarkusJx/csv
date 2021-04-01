@@ -503,6 +503,21 @@ file << std::endl;
 file.endline();
 ```
 
+Iterate over the file:
+```c++
+// Using indices
+for (uint64_t i = 0; i < file.size(); i++) {
+    const auto row = file[i];
+}
+
+// Using iterators
+for (const auto row : file) {
+    // ...
+}
+```
+Please note that the const iterator does not return
+references to the data but copies of the rows.
+
 Write all unwritten changes to the actual file:
 ```c++
 file.flush();
@@ -540,6 +555,9 @@ markusjx::csv csv;
 
 // Write the csv object to the file
 file << csv;
+
+// Or: get the csv object
+csv = file.get_basic_csv();
 ```
 
 #### Implementation notes

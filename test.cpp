@@ -1153,6 +1153,46 @@ TEST_F(CSVFileTest, cacheDeleteAppendTest) {
     }
 }
 
+TEST_F(CSVFileTest, iteratorTest) {
+    std::remove("test.csv");
+    markusjx::csv csv;
+    markusjx::csv_file file("test.csv");
+
+    for (int i = 0; i < 250; i++) {
+        const int n = getRandomInt();
+        const std::string s = getRandomString(20);
+        const bool b = getRandomBool();
+        const double d = getRandomDouble();
+
+        file << n << s << b << d << nullptr;
+        csv << n << s << b << d << nullptr;
+
+        for (int j = 0; j < (getRandomInt() % 16); j++) {
+            file << markusjx::csv::endl;
+            csv << markusjx::csv::endl;
+        }
+    }
+
+    EXPECT_EQ(file.size(), csv.size());
+
+    size_t i = 0;
+    for (auto &row : file) {
+        EXPECT_EQ(csv[i++], row);
+    }
+
+    const markusjx::csv_file c_file = file;
+
+    i = 0;
+    for (const auto &row : c_file) {
+        EXPECT_EQ(csv[i++], row);
+    }
+
+    EXPECT_EQ(csv.size(), i);
+    EXPECT_EQ(file.size(), csv.size());
+    EXPECT_EQ(file.to_basic_csv(), csv);
+    std::remove("test.csv");
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
