@@ -15,7 +15,12 @@ else()
     add_compile_options(-Wall -Wextra -pedantic)
 endif()
 
-add_executable(${PROJECT_NAME} test.cpp csv.hpp)
+include_directories(include)
+
+SET(SRC include/definitions.hpp include/exceptions.hpp include/util.hpp include/escape_sequence_generator.hpp
+        include/csv_cell.hpp include/const_csv_row.hpp include/csv_row.hpp include/basic_csv_file_def.hpp
+        include/basic_csv.hpp include/basic_csv_file.hpp include/csv.hpp include/index_iterator.hpp)
+add_executable(${PROJECT_NAME} test.cpp ${SRC})
 
 # Get and build gtest
 ExternalProject_Add(gtest_project
