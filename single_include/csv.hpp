@@ -437,7 +437,7 @@ namespace markusjx::util {
 
                 // Iterate over the string to convert.
                 // Use ptrdiff_t as type as it is the signed counterpart to size_t.
-                for (ptrdiff_t i = 0; i < static_cast<signed>(toConvert.size()); i++) {
+                for (ptrdiff_t i = 0; i < static_cast<signed>(toConvert.size()); ++i) {
                     // Only continue if the current character is a double quote
                     // and i + 1 is smaller than the size of toConvert
                     if (toConvert[i] == '\"' && static_cast<size_t>(i + 1) < toConvert.size()) {
@@ -448,7 +448,7 @@ namespace markusjx::util {
                         // if the character was un-escapable
                         if (wasChanged) {
                             res += newVal;
-                            i++;
+                            ++i;
                             continue;
                         }
                     }
@@ -474,11 +474,11 @@ namespace markusjx::util {
         CSV_NODISCARD virtual size_t find(const T &str, size_t offset, char delimiter) const {
             // The number of double quotes
             short doubleQuotes = 0;
-            for (size_t pos = offset; pos < str.length(); pos++) {
+            for (size_t pos = offset; pos < str.length(); ++pos) {
                 // If the current character is a
                 // double quote, increase doubleQuotes
                 if (str[pos] == '\"') {
-                    doubleQuotes = (doubleQuotes + 1) % 2;
+                    doubleQuotes = static_cast<short>((doubleQuotes + 1) % 2);
                 } else if (str[pos] == delimiter && doubleQuotes == 0) {
                     // If the string at pos is the delimiter and the
                     // number of double quotes in the last section
@@ -1598,7 +1598,7 @@ namespace markusjx {
          */
         template<class U>
         const_csv_row(const std::vector<U> &data) : cells(data.size()) {
-            for (size_t i = 0; i < data.size(); i++) {
+            for (size_t i = 0; i < data.size(); ++i) {
                 cells[i] = csv_cell<T, Sep, _escape_generator_>(data[i]);
             }
         }
@@ -1681,7 +1681,7 @@ namespace markusjx {
 
             if (this->min_size() == other.min_size()) {
                 // If the sizes match, compare the individual values of the cells
-                for (size_t i = 0; i < this->min_size(); i++) {
+                for (size_t i = 0; i < this->min_size(); ++i) {
                     if (this->at(i) != other.at(i)) {
                         return false;
                     }
@@ -1788,7 +1788,7 @@ namespace markusjx {
             U ss;
 
             // Write all values with the separator at the end to the stream
-            for (size_t i = 0; i < max; i++) {
+            for (size_t i = 0; i < max; ++i) {
                 if (i < cells.size()) {
                     ss << cells[i].rawValue();
                 }
@@ -1902,7 +1902,7 @@ namespace markusjx {
          */
         template<class U>
         csv_row &operator=(const std::vector<U> &data) {
-            for (size_t i = 0; i < data.size(); i++) {
+            for (size_t i = 0; i < data.size(); ++i) {
                 this->at(i).operator=(data.at(i));
             }
 
@@ -1929,7 +1929,7 @@ namespace markusjx {
          */
         template<class U>
         csv_row &operator=(const std::initializer_list<U> &data) {
-            for (size_t i = 0; i < data.size(); i++) {
+            for (size_t i = 0; i < data.size(); ++i) {
                 this->at(i).operator=(data[i]);
             }
 
@@ -1958,7 +1958,7 @@ namespace markusjx {
          */
         csv_cell<T, Sep, _escape_generator_> &at(size_t index) {
             if (index >= this->cells.size()) {
-                for (size_t i = this->cells.size(); i <= index; i++) {
+                for (size_t i = this->cells.size(); i <= index; ++i) {
                     this->cells.emplace_back(nullptr);
                 }
             }
@@ -2281,7 +2281,7 @@ namespace markusjx {
          */
         csv_row<T, Sep, _escape_generator_> &at(size_t index) {
             if (index >= this->rows.size()) {
-                for (size_t i = rows.size(); i <= index; i++) {
+                for (size_t i = rows.size(); i <= index; ++i) {
                     rows.emplace_back(nullptr);
                 }
             }
@@ -2382,7 +2382,7 @@ namespace markusjx {
 
             if (this->size() == other.size()) {
                 // If the sizes match, check if all other values match
-                for (size_t i = 0; i < this->size(); i++) {
+                for (size_t i = 0; i < this->size(); ++i) {
                     if (this->at(i) != other.at(i)) {
                         return false;
                     }
@@ -2777,7 +2777,7 @@ namespace markusjx {
             const size_t max = max_row_length();
             U ss;
 
-            for (size_t i = 0; i < rows.size(); i++) {
+            for (size_t i = 0; i < rows.size(); ++i) {
                 // Prepend a new line if there was already data written
                 if (i > 0) {
                     ss << std::endl;
@@ -3293,14 +3293,14 @@ namespace markusjx {
                 this->endline();
             }
 
-            for (ptrdiff_t i = 0; i < static_cast<signed>(csv.size()); i++) {
+            for (ptrdiff_t i = 0; i < static_cast<signed>(csv.size()); ++i) {
                 cache.insert_or_assign(currentLine, csv[i]);
 
                 // Only increase the current line if i is
                 // not the last line index in csv.
                 // Remember: currentLine is also an index
                 if (i < static_cast<signed>(csv.size()) - 1) {
-                    currentLine++;
+                    ++currentLine;
                 }
             }
 
@@ -3459,7 +3459,7 @@ namespace markusjx {
          * @return this
          */
         basic_csv_file &endline() {
-            currentLine++;
+            ++currentLine;
             return *this;
         }
 
@@ -3565,7 +3565,7 @@ namespace markusjx {
          */
         CSV_NODISCARD size_t max_row_length() const {
             size_t max = 0;
-            for (uint64_t i = 0; i < size(); i++) {
+            for (uint64_t i = 0; i < size(); ++i) {
                 size_t sz = at(i).size();
                 if (sz > max) {
                     max = sz;
@@ -3622,8 +3622,8 @@ namespace markusjx {
          * @param line the line index to "translate"
          */
         void translateLine(uint64_t &line) const {
-            for (size_t i = 0; i < toDelete.size() && toDelete[i] <= line; i++) {
-                line++;
+            for (size_t i = 0; i < toDelete.size() && toDelete[i] <= line; ++i) {
+                ++line;
             }
         }
 
@@ -3842,7 +3842,7 @@ namespace markusjx {
                 // Skip lines that were marked for deletion
                 if (std::find(toDelete.begin(), toDelete.end(), i) != toDelete.end()) {
                     // Increase i and skip this iteration
-                    i++;
+                    ++i;
                     continue;
                 }
 
@@ -3864,7 +3864,7 @@ namespace markusjx {
                 }
 
                 // Increase the line counter
-                i++;
+                ++i;
             }
 
             // Close the input stream
@@ -3874,7 +3874,7 @@ namespace markusjx {
             if (!cache.empty()) {
                 // Get the highest line number
                 const uint64_t max = getTranslatedMaxLineIndex();
-                for (; i <= max; i++) {
+                for (; i <= max; ++i) {
                     // Skip lines that were marked for deletion
                     if (std::find(toDelete.begin(), toDelete.end(), i) != toDelete.end()) {
                         // This line was marked for deletion, skip
@@ -3899,7 +3899,7 @@ namespace markusjx {
             } else {
                 // Append new lines at the end, if required
                 const uint64_t max = getTranslatedMaxLineIndex();
-                for (; i <= max; i++) {
+                for (; i <= max; ++i) {
                     // Skip lines that were marked for deletion
                     if (std::find(toDelete.begin(), toDelete.end(), i) != toDelete.end()) {
                         // This line was marked for deletion, skip
@@ -3945,7 +3945,7 @@ namespace markusjx {
          */
         static void gotoLine(stream_type &stream, uint64_t num) {
             stream.seekg(std::ios::beg);
-            for (size_t i = 0; i < num; i++) {
+            for (size_t i = 0; i < num; ++i) {
                 stream.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
             }
         }

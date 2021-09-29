@@ -106,7 +106,7 @@ namespace markusjx::util {
 
                 // Iterate over the string to convert.
                 // Use ptrdiff_t as type as it is the signed counterpart to size_t.
-                for (ptrdiff_t i = 0; i < static_cast<signed>(toConvert.size()); i++) {
+                for (ptrdiff_t i = 0; i < static_cast<signed>(toConvert.size()); ++i) {
                     // Only continue if the current character is a double quote
                     // and i + 1 is smaller than the size of toConvert
                     if (toConvert[i] == '\"' && static_cast<size_t>(i + 1) < toConvert.size()) {
@@ -117,7 +117,7 @@ namespace markusjx::util {
                         // if the character was un-escapable
                         if (wasChanged) {
                             res += newVal;
-                            i++;
+                            ++i;
                             continue;
                         }
                     }
@@ -143,11 +143,11 @@ namespace markusjx::util {
         CSV_NODISCARD virtual size_t find(const T &str, size_t offset, char delimiter) const {
             // The number of double quotes
             short doubleQuotes = 0;
-            for (size_t pos = offset; pos < str.length(); pos++) {
+            for (size_t pos = offset; pos < str.length(); ++pos) {
                 // If the current character is a
                 // double quote, increase doubleQuotes
                 if (str[pos] == '\"') {
-                    doubleQuotes = (doubleQuotes + 1) % 2;
+                    doubleQuotes = static_cast<short>((doubleQuotes + 1) % 2);
                 } else if (str[pos] == delimiter && doubleQuotes == 0) {
                     // If the string at pos is the delimiter and the
                     // number of double quotes in the last section

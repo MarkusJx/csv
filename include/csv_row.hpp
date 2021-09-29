@@ -101,7 +101,7 @@ namespace markusjx {
          */
         template<class U>
         csv_row &operator=(const std::vector<U> &data) {
-            for (size_t i = 0; i < data.size(); i++) {
+            for (size_t i = 0; i < data.size(); ++i) {
                 this->at(i).operator=(data.at(i));
             }
 
@@ -128,7 +128,7 @@ namespace markusjx {
          */
         template<class U>
         csv_row &operator=(const std::initializer_list<U> &data) {
-            for (size_t i = 0; i < data.size(); i++) {
+            for (size_t i = 0; i < data.size(); ++i) {
                 this->at(i).operator=(data[i]);
             }
 
@@ -157,7 +157,7 @@ namespace markusjx {
          */
         csv_cell<T, Sep, _escape_generator_> &at(size_t index) {
             if (index >= this->cells.size()) {
-                for (size_t i = this->cells.size(); i <= index; i++) {
+                for (size_t i = this->cells.size(); i <= index; ++i) {
                     this->cells.emplace_back(nullptr);
                 }
             }

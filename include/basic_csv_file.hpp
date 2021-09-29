@@ -117,14 +117,14 @@ namespace markusjx {
                 this->endline();
             }
 
-            for (ptrdiff_t i = 0; i < static_cast<signed>(csv.size()); i++) {
+            for (ptrdiff_t i = 0; i < static_cast<signed>(csv.size()); ++i) {
                 cache.insert_or_assign(currentLine, csv[i]);
 
                 // Only increase the current line if i is
                 // not the last line index in csv.
                 // Remember: currentLine is also an index
                 if (i < static_cast<signed>(csv.size()) - 1) {
-                    currentLine++;
+                    ++currentLine;
                 }
             }
 
@@ -283,7 +283,7 @@ namespace markusjx {
          * @return this
          */
         basic_csv_file &endline() {
-            currentLine++;
+            ++currentLine;
             return *this;
         }
 
@@ -389,7 +389,7 @@ namespace markusjx {
          */
         CSV_NODISCARD size_t max_row_length() const {
             size_t max = 0;
-            for (uint64_t i = 0; i < size(); i++) {
+            for (uint64_t i = 0; i < size(); ++i) {
                 size_t sz = at(i).size();
                 if (sz > max) {
                     max = sz;
@@ -446,8 +446,8 @@ namespace markusjx {
          * @param line the line index to "translate"
          */
         void translateLine(uint64_t &line) const {
-            for (size_t i = 0; i < toDelete.size() && toDelete[i] <= line; i++) {
-                line++;
+            for (size_t i = 0; i < toDelete.size() && toDelete[i] <= line; ++i) {
+                ++line;
             }
         }
 
@@ -666,7 +666,7 @@ namespace markusjx {
                 // Skip lines that were marked for deletion
                 if (std::find(toDelete.begin(), toDelete.end(), i) != toDelete.end()) {
                     // Increase i and skip this iteration
-                    i++;
+                    ++i;
                     continue;
                 }
 
@@ -688,7 +688,7 @@ namespace markusjx {
                 }
 
                 // Increase the line counter
-                i++;
+                ++i;
             }
 
             // Close the input stream
@@ -698,7 +698,7 @@ namespace markusjx {
             if (!cache.empty()) {
                 // Get the highest line number
                 const uint64_t max = getTranslatedMaxLineIndex();
-                for (; i <= max; i++) {
+                for (; i <= max; ++i) {
                     // Skip lines that were marked for deletion
                     if (std::find(toDelete.begin(), toDelete.end(), i) != toDelete.end()) {
                         // This line was marked for deletion, skip
@@ -723,7 +723,7 @@ namespace markusjx {
             } else {
                 // Append new lines at the end, if required
                 const uint64_t max = getTranslatedMaxLineIndex();
-                for (; i <= max; i++) {
+                for (; i <= max; ++i) {
                     // Skip lines that were marked for deletion
                     if (std::find(toDelete.begin(), toDelete.end(), i) != toDelete.end()) {
                         // This line was marked for deletion, skip
@@ -769,7 +769,7 @@ namespace markusjx {
          */
         static void gotoLine(stream_type &stream, uint64_t num) {
             stream.seekg(std::ios::beg);
-            for (size_t i = 0; i < num; i++) {
+            for (size_t i = 0; i < num; ++i) {
                 stream.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
             }
         }

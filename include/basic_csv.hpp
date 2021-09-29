@@ -184,7 +184,7 @@ namespace markusjx {
          */
         csv_row<T, Sep, _escape_generator_> &at(size_t index) {
             if (index >= this->rows.size()) {
-                for (size_t i = rows.size(); i <= index; i++) {
+                for (size_t i = rows.size(); i <= index; ++i) {
                     rows.emplace_back(nullptr);
                 }
             }
@@ -285,7 +285,7 @@ namespace markusjx {
 
             if (this->size() == other.size()) {
                 // If the sizes match, check if all other values match
-                for (size_t i = 0; i < this->size(); i++) {
+                for (size_t i = 0; i < this->size(); ++i) {
                     if (this->at(i) != other.at(i)) {
                         return false;
                     }
@@ -680,7 +680,7 @@ namespace markusjx {
             const size_t max = max_row_length();
             U ss;
 
-            for (size_t i = 0; i < rows.size(); i++) {
+            for (size_t i = 0; i < rows.size(); ++i) {
                 // Prepend a new line if there was already data written
                 if (i > 0) {
                     ss << std::endl;

@@ -66,7 +66,7 @@ namespace markusjx {
          */
         template<class U>
         const_csv_row(const std::vector<U> &data) : cells(data.size()) {
-            for (size_t i = 0; i < data.size(); i++) {
+            for (size_t i = 0; i < data.size(); ++i) {
                 cells[i] = csv_cell<T, Sep, _escape_generator_>(data[i]);
             }
         }
@@ -149,7 +149,7 @@ namespace markusjx {
 
             if (this->min_size() == other.min_size()) {
                 // If the sizes match, compare the individual values of the cells
-                for (size_t i = 0; i < this->min_size(); i++) {
+                for (size_t i = 0; i < this->min_size(); ++i) {
                     if (this->at(i) != other.at(i)) {
                         return false;
                     }
@@ -256,7 +256,7 @@ namespace markusjx {
             U ss;
 
             // Write all values with the separator at the end to the stream
-            for (size_t i = 0; i < max; i++) {
+            for (size_t i = 0; i < max; ++i) {
                 if (i < cells.size()) {
                     ss << cells[i].rawValue();
                 }
