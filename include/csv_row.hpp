@@ -259,9 +259,20 @@ namespace markusjx {
          * Remove a value from this row
          *
          * @param index the index of the cell to remove
+         * @return the new iterator
          */
-        void remove(size_t index) {
-            this->cells.erase(this->cells.begin() + index);
+        auto erase(size_t index) {
+            return this->cells.erase(this->cells.begin() + index);
+        }
+
+        /**
+         * Remove a value from this row
+         *
+         * @param iter the iterator pointing to the value to remove
+         * @return the new iterator
+         */
+        cell_iterator erase(const const_cell_iterator &iter) {
+            return this->cells.erase(iter);
         }
 
         /**
@@ -272,6 +283,9 @@ namespace markusjx {
                 this->cells.pop_back();
             }
         }
+
+        /// Default destructor
+        ~csv_row() noexcept override = default;
     };
 } //namespace markusjx
 

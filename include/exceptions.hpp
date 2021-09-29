@@ -71,6 +71,19 @@ namespace markusjx::exceptions {
          */
         explicit index_out_of_range_error(const std::string &msg) : exception("IndexOutOfRangeError", msg) {}
     };
+
+    /**
+     * A file operation error
+     */
+    class file_operation_error : public exception {
+    public:
+        /**
+         * Create a file operation error
+         *
+         * @param msg the error message
+         */
+        explicit file_operation_error(const std::string &msg) : exception("FileOperationError", msg) {}
+    };
 } //namespace markusjx::exceptions
 
 #endif //MARKUSJX_CSV_EXCEPTIONS_HPP

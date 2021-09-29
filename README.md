@@ -281,17 +281,44 @@ for (const auto &row : csv) {
 ```
 
 #### Deleting rows
-Delete rows using ``markusjx::basic_csv::remove(size_t)``:
+Delete rows using ``markusjx::basic_csv::erase(size_t)``:
 ```c++
 // Delete the first row
-csv.remove(0);
+csv.erase(0);
+
+// Delete the second row
+csv.erase(1);
 ```
 
+Delete rows using ``markusjx::basic_csv::erase(markusjx::basic_csv::const_row_iterator)``:
+```c++
+// Delete the first row
+csv.erase(csv.begin());
+
+// Delete the second row
+csv.erase(csv.begin() + 1);
+```
+**Note:** All erase methods return a ``markusjx::basic_csv::row_iterator`` which points to the
+row which now replaces the deleted row. If no row replaces the deleted row, an iterator equal
+to the iterator returned by ``markusjx::basic_csv::end()`` is returned.
+
 #### Deleting cells
-Delete cells from a row using ``markusjx::csv_row::remove(size_t)``:
+Delete cells from a row using ``markusjx::csv_row::erase(size_t)``:
 ```c++
 // Delete the first cell in the first row
-csv[0].remove(0);
+csv[0].erase(0);
+
+// Delete the second cell in the first row
+csv[0].erase(1);
+```
+
+Delete cells using ``markusjx::csv_row::erase(markusjx::csv_row::const_cell_iterator)``:
+```c++
+// Delete the first cell in the first row
+csv[0].erase(csv[0].begin());
+
+// Delete the second cell in the first row
+csv[0].erase(csv[0].begin() + 1);
 ```
 
 #### Clearing the csv object
@@ -491,7 +518,7 @@ file[1][0] = 456;
 int read = file[1][0];
 
 // Delete a row
-file.remove(0);
+file.erase(0);
 
 // End lines either using
 file << markusjx::csv_file::endl;
@@ -522,6 +549,35 @@ Write all unwritten changes to the actual file:
 ```c++
 file.flush();
 ```
+
+#### Deleting data
+Using indices:
+```c++
+// Delete the first line
+file.erase(0);
+
+// Delete the second line
+file.erase(1);
+```
+
+Using iterators:
+```c++
+// Delete the first line
+file.erase(file.begin());
+
+// Delete the second line
+file.erase(file.begin() + 1);
+```
+
+**Note:** All delete operations are cached, thus they are not directly
+written to the disk. Call ``markusjx::basic_csv_file::flush()`` to write the changes
+to the file. Both ``markusjx::basic_csv_file::erase(uint64_t)``,
+``markusjx::basic_csv_file::erase(markusjx::basic_csv_file::iterator)`` and
+``markusjx::basic_csv_file::erase(markusjx::basic_csv_file::const_iterator)``
+return a ``markusjx::basic_csv_file::iterator`` pointing to the row
+that replaced the deleted row. If no row is replacing the deleted
+row, an ``iterator`` which is equal to the one returned by 
+``markusjx::basic_csv_file::end()`` will be returned.
 
 #### Conversion between ``basic_csv_file`` and ``basic_csv``
 ##### Reading a ``basic_csv_file`` to a ``basic_csv`` object

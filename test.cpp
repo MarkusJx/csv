@@ -4,7 +4,7 @@
 
 #include <csv.hpp>
 
-#define CSV_ASSERT_NUM_MATCH() ASSERT_EQ(csv.numElements(), static_cast<uint64_t>((index + 1) * numValues))
+#define CSV_ASSERT_NUM_MATCH() ASSERT_EQ(csv.num_elements(), static_cast<uint64_t>((index + 1) * numValues))
 
 #define CSV_CLEAR() CSV_ASSERT_NUM_MATCH();\
                     csv[index].clear();\
@@ -136,7 +136,6 @@ protected:
             const T cur = curGetter();
             csv[index][i] = cur;
 
-            //std::cout << cur << std::endl;
             assert_eq(index, i, cur);
         }
 
@@ -169,7 +168,7 @@ markusjx::csv CSVTest::csv;
 TEST_F(CSVTest, emptyCheck) {
     ASSERT_TRUE(csv.empty());
     ASSERT_EQ(csv.size(), static_cast<size_t>(0));
-    ASSERT_EQ(csv.numElements(), static_cast<uint64_t>(0));
+    ASSERT_EQ(csv.num_elements(), static_cast<uint64_t>(0));
 }
 
 TEST_F(CSVTest, stripTest) {
@@ -180,16 +179,16 @@ TEST_F(CSVTest, stripTest) {
 
     c = {
             {"a", "", ""},
-            {"", ""}
+            {"",  ""}
     };
 
     c.strip();
-    ASSERT_EQ(c.maxRowLength(), static_cast<size_t>(1));
+    ASSERT_EQ(c.max_row_length(), static_cast<size_t>(1));
     ASSERT_EQ(c, markusjx::csv::parse("a"));
 }
 
 TEST_F(CSVTest, integerTest) {
-    csv_test<int>(0, [this] { return getRandomInt(); });;
+    csv_test<int>(0, [this] { return getRandomInt(); });
 }
 
 TEST_F(CSVTest, longTest) {
@@ -233,13 +232,13 @@ TEST_F(ConstructorTest, fromVectorTest) {
     }
 
     markusjx::csv csv = data;
-    EXPECT_EQ(csv.numElements(), static_cast<uint64_t>(400));
+    EXPECT_EQ(csv.num_elements(), static_cast<uint64_t>(400));
 }
 
 TEST_F(ConstructorTest, fromInitializerListTest) {
     markusjx::csv csv = {{"abc;", 1,  5,    'd',     false},
                          {25,     42, true, "def\n", nullptr, "ye"}};
-    EXPECT_EQ(csv.numElements(), static_cast<uint64_t>(11));
+    EXPECT_EQ(csv.num_elements(), static_cast<uint64_t>(11));
 }
 
 TEST_F(ConstructorTest, appendTest) {
@@ -250,7 +249,7 @@ TEST_F(ConstructorTest, appendTest) {
 
     csv1 << csv2;
 
-    EXPECT_EQ(csv1.numElements(), static_cast<uint64_t>(22));
+    EXPECT_EQ(csv1.num_elements(), static_cast<uint64_t>(22));
 }
 
 TEST_F(ConstructorTest, parseTest) {
@@ -498,6 +497,107 @@ TEST_F(NumberTest, divAssignTest) {
 
         ASSERT_EQ(csv[0][0], n1 / n2);
     }
+}
+
+class EraseTest : public CSVTestBase {
+};
+
+TEST_F(EraseTest, indexEraseRowTest) {
+    markusjx::csv csv = {
+            {"a", "b", "c"},
+            {"d", "e", "f"},
+            {"g", "h", "i"}
+    };
+
+    auto it = csv.erase(1);
+    ASSERT_EQ(it - csv.begin(), 1);
+    ASSERT_EQ(csv.size(), static_cast<size_t>(2));
+    ASSERT_EQ(csv[0].to_string(), "a;b;c");
+    ASSERT_EQ(csv[1].to_string(), "g;h;i");
+
+    it = csv.erase(0);
+    ASSERT_EQ(it - csv.begin(), 0);
+    ASSERT_EQ(it, csv.begin());
+    ASSERT_EQ(csv.size(), static_cast<size_t>(1));
+    ASSERT_EQ(csv[0].to_string(), "g;h;i");
+
+    it = csv.erase(0);
+    ASSERT_EQ(it, csv.end());
+    ASSERT_EQ(csv.size(), static_cast<size_t>(0));
+}
+
+TEST_F(EraseTest, iteratorEraseRowTest) {
+    markusjx::csv csv = {
+            {"a", "b", "c"},
+            {"d", "e", "f"},
+            {"g", "h", "i"}
+    };
+
+    auto it = csv.erase(csv.begin() + 1);
+    ASSERT_EQ(it - csv.begin(), 1);
+    ASSERT_EQ(csv.size(), (size_t) 2);
+    ASSERT_EQ(csv[0].to_string(), "a;b;c");
+    ASSERT_EQ(csv[1].to_string(), "g;h;i");
+
+    it = csv.erase(csv.begin());
+    ASSERT_EQ(it - csv.begin(), 0);
+    ASSERT_EQ(it, csv.begin());
+    ASSERT_EQ(csv.size(), static_cast<size_t>(1));
+    ASSERT_EQ(csv[0].to_string(), "g;h;i");
+
+    it = csv.erase(csv.begin());
+    ASSERT_EQ(it, csv.end());
+    ASSERT_EQ(csv.size(), static_cast<size_t>(0));
+}
+
+TEST_F(EraseTest, indexEraseColumnTest) {
+    markusjx::csv csv = {
+            {"a", "b", "c"}
+    };
+
+    auto it = csv[0].erase(1);
+    ASSERT_EQ(it - csv[0].begin(), 1);
+    ASSERT_EQ(csv[0].size(), (size_t) 2);
+    ASSERT_EQ(csv[0].to_string(), "a;c");
+
+    it = csv[0].erase(0);
+    ASSERT_EQ(it, csv[0].begin());
+    ASSERT_EQ(csv[0].size(), (size_t) 1);
+    ASSERT_EQ(csv[0].to_string(), "c");
+
+    it = csv[0].erase(0);
+    ASSERT_EQ(it, csv[0].end());
+    ASSERT_EQ(csv[0].size(), (size_t) 0);
+    ASSERT_TRUE(csv[0].empty());
+
+    // Strip the csv object
+    csv.strip();
+    ASSERT_TRUE(csv.empty());
+}
+
+TEST_F(EraseTest, iteratorEraseColumnTest) {
+    markusjx::csv csv = {
+            {"a", "b", "c"}
+    };
+
+    auto it = csv[0].erase(csv[0].begin() + 1);
+    ASSERT_EQ(it - csv[0].begin(), 1);
+    ASSERT_EQ(csv[0].size(), (size_t) 2);
+    ASSERT_EQ(csv[0].to_string(), "a;c");
+
+    it = csv[0].erase(csv[0].begin());
+    ASSERT_EQ(it, csv[0].begin());
+    ASSERT_EQ(csv[0].size(), (size_t) 1);
+    ASSERT_EQ(csv[0].to_string(), "c");
+
+    it = csv[0].erase(csv[0].begin());
+    ASSERT_EQ(it, csv[0].end());
+    ASSERT_EQ(csv[0].size(), (size_t) 0);
+    ASSERT_TRUE(csv[0].empty());
+
+    // Strip the csv object
+    csv.strip();
+    ASSERT_TRUE(csv.empty());
 }
 
 class ObjectOperationsTest : public CSVTestBase {
@@ -946,12 +1046,113 @@ TEST_F(CSVFileTest, deleteTest) {
         for (int i = 0; i < std::min(static_cast<int>(csv.size() - 5), 50); i++) {
             const int pos = std::abs(getRandomInt() % static_cast<int>(csv.size() - 1));
 
-            file.remove(pos);
-            csv.remove(pos);
+            file.erase(pos);
+            csv.erase(pos);
         }
 
         EXPECT_EQ(file.size(), csv.size());
         EXPECT_EQ(file.to_basic_csv(), csv);
+        std::remove("test.csv");
+    }
+}
+
+TEST_F(CSVFileTest, iteratorDeleteTest) {
+    for (int x = 0; x < 100; x++) {
+        std::remove("test.csv");
+        markusjx::csv csv;
+        markusjx::csv_file file("test.csv");
+
+        for (int i = 0; i < 50; i++) {
+            const int n = getRandomInt();
+            const std::string s = getRandomString(20);
+            const bool b = getRandomBool();
+            const double d = getRandomDouble();
+
+            file << n << s << b << d << nullptr;
+            csv << n << s << b << d << nullptr;
+
+            for (int j = 0; j < (getRandomInt() % 16); j++) {
+                file << markusjx::csv::endl;
+                csv << markusjx::csv::endl;
+            }
+        }
+
+        file.flush();
+
+        // We can't actually always remove 50 lines. If there are less
+        // than 50 lines we'll get an arithmetic exception, which is not so good
+        for (int i = 0; i < std::min(static_cast<int>(csv.size() - 5), 50); i++) {
+            const int pos = std::abs(getRandomInt() % static_cast<int>(csv.size() - 1));
+
+            auto f_it = file.erase(file.begin() + pos);
+            auto c_it = csv.erase(csv.begin() + pos);
+
+            ASSERT_EQ(f_it - file.begin(), (uint64_t) (c_it - csv.begin()));
+        }
+
+        EXPECT_EQ(file.size(), csv.size());
+        EXPECT_EQ(file.to_basic_csv(), csv);
+        std::remove("test.csv");
+    }
+}
+
+TEST_F(CSVFileTest, iteratorFullDeleteTest) {
+    for (int x = 0; x < 100; x++) {
+        std::remove("test.csv");
+        markusjx::csv_file file("test.csv");
+
+        for (int i = 0; i < 50; i++) {
+            const int n = getRandomInt();
+            const std::string s = getRandomString(20);
+            const bool b = getRandomBool();
+            const double d = getRandomDouble();
+
+            file << n << s << b << d << nullptr;
+
+            for (int j = 0; j < (getRandomInt() % 16); j++) {
+                file << markusjx::csv::endl;
+            }
+        }
+
+        file.flush();
+
+        auto it = file.begin();
+        while (it != file.end()) {
+            it = file.erase(it);
+        }
+
+        file.flush();
+        EXPECT_EQ(file.size(), (uint64_t) 0);
+        std::remove("test.csv");
+    }
+}
+
+TEST_F(CSVFileTest, iteratorFullDeleteCacheTest) {
+    for (int x = 0; x < 100; x++) {
+        std::remove("test.csv");
+        markusjx::csv_file file("test.csv");
+
+        for (int i = 0; i < 50; i++) {
+            const int n = getRandomInt();
+            const std::string s = getRandomString(20);
+            const bool b = getRandomBool();
+            const double d = getRandomDouble();
+
+            file << n << s << b << d << nullptr;
+
+            for (int j = 0; j < (getRandomInt() % 16); j++) {
+                file << markusjx::csv::endl;
+            }
+        }
+
+        file.flush();
+
+        auto it = file.begin();
+        while (it != file.end()) {
+            it = file.erase(it);
+        }
+
+        EXPECT_EQ(file.size(), (uint64_t) 0);
         std::remove("test.csv");
     }
 }
@@ -985,8 +1186,8 @@ TEST_F(CSVFileTest, cacheDeleteTest) {
         for (int i = 0; i < std::min(static_cast<int>(csv.size() - 5), 50); i++) {
             const int pos = std::abs(getRandomInt() % static_cast<int>(csv.size() - 1));
 
-            file.remove(pos);
-            csv.remove(pos);
+            file.erase(pos);
+            csv.erase(pos);
         }
 
         EXPECT_EQ(file.size(), csv.size());
@@ -1024,8 +1225,8 @@ TEST_F(CSVFileTest, deleteAccessTest) {
         for (int i = 0; i < std::min(static_cast<int>(csv.size() - 5), 50); i++) {
             const int pos = std::abs(getRandomInt() % static_cast<int>(csv.size() - 1));
 
-            file.remove(pos);
-            csv.remove(pos);
+            file.erase(pos);
+            csv.erase(pos);
             file.flush();
 
             const int p1 = std::abs(pos - 1);
@@ -1075,8 +1276,8 @@ TEST_F(CSVFileTest, cacheDeleteAccessTest) {
         for (int i = 0; i < std::min(static_cast<int>(csv.size() - 5), 50); i++) {
             const int pos = std::abs(getRandomInt() % static_cast<int>(csv.size() - 1));
 
-            file.remove(pos);
-            csv.remove(pos);
+            file.erase(pos);
+            csv.erase(pos);
 
             const int p1 = std::abs(pos - 1);
             const int p2 = std::min<int>(pos, static_cast<int>(csv.size() - 1));
@@ -1125,8 +1326,8 @@ TEST_F(CSVFileTest, cacheDeleteAppendTest) {
         for (int i = 0; i < std::min(static_cast<int>(csv.size() - 5), 50); i++) {
             const int pos = std::abs(getRandomInt() % static_cast<int>(csv.size() - 1));
 
-            file.remove(pos);
-            csv.remove(pos);
+            file.erase(pos);
+            csv.erase(pos);
 
             EXPECT_EQ(file.size(), csv.size());
         }
@@ -1176,14 +1377,14 @@ TEST_F(CSVFileTest, iteratorTest) {
     EXPECT_EQ(file.size(), csv.size());
 
     size_t i = 0;
-    for (auto &row : file) {
+    for (auto &row: file) {
         EXPECT_EQ(csv[i++], row);
     }
 
     const markusjx::csv_file c_file = file;
 
     i = 0;
-    for (const auto &row : c_file) {
+    for (const auto &row: c_file) {
         EXPECT_EQ(csv[i++], row);
     }
 

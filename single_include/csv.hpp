@@ -159,6 +159,19 @@ namespace markusjx::exceptions {
          */
         explicit index_out_of_range_error(const std::string &msg) : exception("IndexOutOfRangeError", msg) {}
     };
+
+    /**
+     * A file operation error
+     */
+    class file_operation_error : public exception {
+    public:
+        /**
+         * Create a file operation error
+         *
+         * @param msg the error message
+         */
+        explicit file_operation_error(const std::string &msg) : exception("FileOperationError", msg) {}
+    };
 } //namespace markusjx::exceptions
 
 #endif //MARKUSJX_CSV_EXCEPTIONS_HPP
@@ -1753,10 +1766,14 @@ namespace markusjx {
             }
         }
 
+        /// Operator << for stream operations
         friend std::ostream &operator<<(std::ostream &stream, const const_csv_row &row) {
             stream << row.to_string();
             return stream;
         }
+
+        /// Default destructor
+        virtual ~const_csv_row() noexcept = default;
 
     protected:
         /**
@@ -2043,9 +2060,20 @@ namespace markusjx {
          * Remove a value from this row
          *
          * @param index the index of the cell to remove
+         * @return the new iterator
          */
-        void remove(size_t index) {
-            this->cells.erase(this->cells.begin() + index);
+        auto erase(size_t index) {
+            return this->cells.erase(this->cells.begin() + index);
+        }
+
+        /**
+         * Remove a value from this row
+         *
+         * @param iter the iterator pointing to the value to remove
+         * @return the new iterator
+         */
+        cell_iterator erase(const const_cell_iterator &iter) {
+            return this->cells.erase(iter);
         }
 
         /**
@@ -2056,6 +2084,9 @@ namespace markusjx {
                 this->cells.pop_back();
             }
         }
+
+        /// Default destructor
+        ~csv_row() noexcept override = default;
     };
 } //namespace markusjx
 
@@ -2578,9 +2609,20 @@ namespace markusjx {
          * Remove a row at an index
          *
          * @param index the index if the row to delete
+         * @return the current iterator
          */
-        void remove(size_t index) {
-            this->rows.erase(this->rows.begin() + index);
+        auto erase(size_t index) {
+            return this->rows.erase(this->rows.begin() + index);
+        }
+
+        /**
+         * Remove a row by its iterator
+         *
+         * @param iter the iterator to identify the row by
+         * @return the new current iterator
+         */
+        row_iterator erase(const const_row_iterator &iter) {
+            return this->rows.erase(iter);
         }
 
         /**
@@ -2611,7 +2653,7 @@ namespace markusjx {
          *
          * @return the length of the longest row
          */
-        CSV_NODISCARD size_t maxRowLength() const {
+        CSV_NODISCARD size_t max_row_length() const {
             size_t max = 0;
             for (const csv_row<T, Sep, _escape_generator_> &row : rows) {
                 if (row.min_size() > max) {
@@ -2627,7 +2669,7 @@ namespace markusjx {
          *
          * @return the number of rows
          */
-        CSV_NODISCARD uint64_t numElements() const {
+        CSV_NODISCARD uint64_t num_elements() const {
             uint64_t size = 0;
             for (const csv_row<T, Sep, _escape_generator_> &row : rows) {
                 size += row.size();
@@ -2732,7 +2774,7 @@ namespace markusjx {
          */
         template<class U>
         CSV_NODISCARD T to_string_impl() const {
-            const size_t max = maxRowLength();
+            const size_t max = max_row_length();
             U ss;
 
             for (size_t i = 0; i < rows.size(); i++) {
@@ -2784,6 +2826,17 @@ namespace markusjx {
 
 namespace markusjx {
     /**
+     * A constant iterator to iterator over indices.
+     * Just returns copies of the value type.
+     * Requires T to have a function at().
+     *
+     * @tparam T the type to iterate over
+     * @tparam U the value type
+     */
+    template<class T, class U>
+    class const_index_iterator;
+
+    /**
      * An iterator to iterator over indices.
      * Requires T to have a function at().
      *
@@ -2794,8 +2847,9 @@ namespace markusjx {
     class index_iterator {
     public:
         using iterator_category = std::forward_iterator_tag;
-        using difference_type = int64_t;
+        using difference_type = ptrdiff_t;
         using value_type = U;
+        using index_type = uint64_t;
 
         /**
          * Create an index iterator
@@ -2803,7 +2857,7 @@ namespace markusjx {
          * @param data the data to iterate over
          * @param pos the position to start at
          */
-        index_iterator(T *data, uint64_t pos) : data(data), pos(pos) {}
+        index_iterator(T *data, index_type pos) : data(data), pos(pos) {}
 
         /**
          * Get a reference to the value
@@ -2845,6 +2899,93 @@ namespace markusjx {
         }
 
         /**
+         * Prefix decrement
+         *
+         * @return this
+         */
+        index_iterator &operator--() {
+            pos--;
+            return *this;
+        }
+
+        /**
+         * Postfix decrement
+         *
+         * @return this before it was decreased
+         */
+        index_iterator operator--(int) {
+            index_iterator tmp = *this;
+            --pos;
+            return tmp;
+        }
+
+        CSV_NODISCARD index_type operator-(const index_iterator &it) const {
+            return pos - it.pos;
+        }
+
+        CSV_NODISCARD inline index_type operator-(const const_index_iterator<T, U> &it) const;
+
+        template<class N>
+        CSV_NODISCARD index_iterator operator+(N val) const {
+            index_iterator tmp = *this;
+            tmp.pos += static_cast<index_type>(val);
+            return tmp;
+        }
+
+        template<class N>
+        CSV_NODISCARD index_iterator operator-(N val) const {
+            index_iterator tmp = *this;
+            tmp.pos -= static_cast<index_type>(val);
+            return tmp;
+        }
+
+        template<class N>
+        CSV_NODISCARD index_iterator operator*(N val) const {
+            index_iterator tmp = *this;
+            tmp.pos *= static_cast<index_type>(val);
+            return tmp;
+        }
+
+        template<class N>
+        CSV_NODISCARD index_iterator operator/(N val) const {
+            index_iterator tmp = *this;
+            tmp.pos /= static_cast<index_type>(val);
+            return tmp;
+        }
+
+        template<class N>
+        index_iterator &operator+=(N val) {
+            pos += static_cast<index_type>(val);
+            return *this;
+        }
+
+        template<class N>
+        index_iterator &operator-=(N val) {
+            pos -= static_cast<index_type>(val);
+            return *this;
+        }
+
+        template<class N>
+        index_iterator &operator*=(N val) {
+            pos *= static_cast<index_type>(val);
+            return *this;
+        }
+
+        template<class N>
+        index_iterator &operator/=(N val) {
+            pos /= static_cast<index_type>(val);
+            return *this;
+        }
+
+        CSV_NODISCARD index_type position() const {
+            return pos;
+        }
+
+        CSV_NODISCARD T *get_data() const {
+            return data;
+        }
+
+        /**
          * Check if this is equal to another index_iterator
          *
          * @param other the iterator to compare to
@@ -2868,7 +3009,7 @@ namespace markusjx {
         // A pointer to the data
         T *data;
         // The current position
-        uint64_t pos;
+        index_type pos;
     };
 
     /**
@@ -2883,8 +3024,9 @@ namespace markusjx {
     class const_index_iterator {
     public:
         using iterator_category = std::forward_iterator_tag;
-        using difference_type = int64_t;
+        using difference_type = ptrdiff_t;
         using value_type = U;
+        using index_type = uint64_t;
 
         /**
          * Create a constant index iterator
@@ -2892,7 +3034,7 @@ namespace markusjx {
          * @param data the data to iterate over
          * @param pos the position to start at
          */
-        const_index_iterator(const T *data, uint64_t pos) : data(data), pos(pos) {}
+        const_index_iterator(const T *data, index_type pos) : data(data), pos(pos) {}
 
         /**
          * Get a copy of the value
@@ -2919,9 +3061,98 @@ namespace markusjx {
          * @return this before it was increased
          */
         const_index_iterator operator++(int) {
-            index_iterator tmp = *this;
+            const_index_iterator tmp = *this;
             ++pos;
             return tmp;
+        }
+
+        /**
+         * Prefix decrement
+         *
+         * @return this
+         */
+        const_index_iterator &operator--() {
+            pos--;
+            return *this;
+        }
+
+        /**
+         * Postfix decrement
+         *
+         * @return this before it was decreased
+         */
+        const_index_iterator operator--(int) {
+            const_index_iterator tmp = *this;
+            --pos;
+            return tmp;
+        }
+
+        CSV_NODISCARD index_type operator-(const const_index_iterator &it) const {
+            return pos - it.pos;
+        }
+
+        CSV_NODISCARD index_type operator-(const index_iterator<T, U> &it) const {
+            return pos - it.position();
+        }
+
+        template<class N>
+        CSV_NODISCARD const_index_iterator operator+(N val) const {
+            index_iterator tmp = *this;
+            tmp.pos += static_cast<index_type>(val);
+            return tmp;
+        }
+
+        template<class N>
+        CSV_NODISCARD const_index_iterator operator-(N val) const {
+            index_iterator tmp = *this;
+            tmp.pos -= static_cast<index_type>(val);
+            return tmp;
+        }
+
+        template<class N>
+        CSV_NODISCARD const_index_iterator operator*(N val) const {
+            index_iterator tmp = *this;
+            tmp.pos *= static_cast<index_type>(val);
+            return tmp;
+        }
+
+        template<class N>
+        CSV_NODISCARD const_index_iterator operator/(N val) const {
+            index_iterator tmp = *this;
+            tmp.pos /= static_cast<index_type>(val);
+            return tmp;
+        }
+
+        template<class N>
+        const_index_iterator &operator+=(N val) {
+            pos += static_cast<index_type>(val);
+            return *this;
+        }
+
+        template<class N>
+        const_index_iterator &operator-=(N val) {
+            pos -= static_cast<index_type>(val);
+            return *this;
+        }
+
+        template<class N>
+        const_index_iterator &operator*=(N val) {
+            pos *= static_cast<index_type>(val);
+            return *this;
+        }
+
+        template<class N>
+        const_index_iterator &operator/=(N val) {
+            pos /= static_cast<index_type>(val);
+            return *this;
+        }
+
+        CSV_NODISCARD index_type position() const {
+            return pos;
+        }
+
+        CSV_NODISCARD T *get_data() const {
+            return data;
         }
 
         /**
@@ -2950,6 +3181,12 @@ namespace markusjx {
         // The current position
         uint64_t pos;
     };
+
+    template<class T, class U>
+    CSV_NODISCARD inline typename index_iterator<T, U>::index_type
+    index_iterator<T, U>::operator-(const const_index_iterator<T, U> &it) const {
+        return pos - it.position();
+    }
 } //namespace markusjx
 
 #endif //MARKUSJX_CSV_INDEX_ITERATOR_HPP
@@ -2980,7 +3217,7 @@ namespace markusjx {
          * @param maxCached the number of cached elements
          */
         explicit basic_csv_file(const string_type &path, size_t maxCached = 100)
-                : toDelete(), maxCached(maxCached), cache(), path(path) {
+                : maxCached(maxCached), cache(), path(path) {
             // Assign the current line to the index of the last line in the file
             currentLine = getLastFileLineIndex();
         }
@@ -2993,7 +3230,8 @@ namespace markusjx {
          */
         basic_csv_file &operator=(const basic_csv<string_type, Sep, _escape_generator_> &csv) {
             clear();
-            return this->push(csv);
+            this->push(csv);
+            return *this;
         }
 
         /**
@@ -3050,11 +3288,8 @@ namespace markusjx {
          * @return this
          */
         basic_csv_file &operator<<(const basic_csv<string_type, Sep, _escape_generator_> &csv) {
-            // Get the current line
-            const const_csv_row<string_type, Sep, _escape_generator_> line = getCurrentLine();
-
             // Add a new line if the current line is not empty
-            if (!line.empty()) {
+            if (!getCurrentLine().empty()) {
                 this->endline();
             }
 
@@ -3234,7 +3469,38 @@ namespace markusjx {
          * @return the number if rows
          */
         CSV_NODISCARD uint64_t size() const {
-            return getMaxLineIndex() + 1;
+            uint64_t res = getMaxLineIndex() + 1;
+            if (res == 1 && is_file_empty()) {
+                return 0;
+            } else {
+                return res;
+            }
+        }
+
+        /**
+         * Check if the file is empty.
+         * Only checks if the actual file on the
+         * disk is empty, not if there is data in the cache.
+         *
+         * @return true if the file is empty
+         */
+        CSV_NODISCARD bool is_file_empty() const {
+            stream_type ifs = getStream(std::ios::in);
+            if (!ifs) {
+                throw exceptions::file_operation_error("Could not open the file stream");
+            } else {
+                return ifs.peek() == std::ifstream::traits_type::eof();
+            }
+        }
+
+        /**
+         * Check if the csv file is empty.
+         * Also checks if the cache is empty.
+         *
+         * @return true if the csv file is empty
+         */
+        CSV_NODISCARD bool empty() const {
+            return size() <= 0;
         }
 
         /**
@@ -3242,17 +3508,18 @@ namespace markusjx {
          *
          * @param index the zero-based index of the row to delete
          */
-        void remove(uint64_t index) {
+        iterator erase(uint64_t index) {
             if (index > getMaxLineIndex()) {
                 throw exceptions::index_out_of_range_error("The requested index is out of range");
             }
+
+            uint64_t index_cpy = index;
 
             // Translate the index
             translateLine(index);
 
             // Erase the line from the cache if it is stored in there
-            const const_cache_iterator it = cache.find(index);
-            if (it != cache.end()) {
+            if (const const_cache_iterator it = cache.find(index); it != cache.end()) {
                 cache.erase(it);
             }
 
@@ -3266,6 +3533,20 @@ namespace markusjx {
             if (getCacheSize() >= maxCached) {
                 flush();
             }
+
+            if (index_cpy > getMaxLineIndex()) {
+                return this->end();
+            } else {
+                return this->begin() + index_cpy;
+            }
+        }
+
+        iterator erase(const const_iterator &iter) {
+            return this->erase(iter - this->begin());
+        }
+
+        iterator erase(const iterator &iter) {
+            return this->erase(iter - this->begin());
         }
 
         /**
@@ -3282,7 +3563,7 @@ namespace markusjx {
          *
          * @return the length of the longest row
          */
-        CSV_NODISCARD size_t maxRowLength() const {
+        CSV_NODISCARD size_t max_row_length() const {
             size_t max = 0;
             for (uint64_t i = 0; i < size(); i++) {
                 size_t sz = at(i).size();
@@ -3547,7 +3828,7 @@ namespace markusjx {
             stream_type out(getTmpFile(), std::ios::out | std::ios::app);
             stream_type in = getStream(std::ios::in);
 
-            const size_t maxLength = maxRowLength();
+            const size_t maxLength = max_row_length();
 
             // Whether there was already a line written to the output file
             bool lineWritten = false;
@@ -3575,8 +3856,7 @@ namespace markusjx {
                 // Check if the cache has a value for the current line.
                 // IF so, write that to the tmp file instead of the original value.
                 // If not, write the original value to the tmp file
-                const const_cache_iterator it = cache.find(i);
-                if (it == cache.end()) {
+                if (const const_cache_iterator it = cache.find(i); it == cache.end()) {
                     out << csv_row<string_type, Sep, _escape_generator_>::parse(current).to_string(maxLength);
                 } else {
                     out << it->second.to_string(maxLength);

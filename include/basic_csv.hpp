@@ -512,9 +512,20 @@ namespace markusjx {
          * Remove a row at an index
          *
          * @param index the index if the row to delete
+         * @return the current iterator
          */
-        void remove(size_t index) {
-            this->rows.erase(this->rows.begin() + index);
+        auto erase(size_t index) {
+            return this->rows.erase(this->rows.begin() + index);
+        }
+
+        /**
+         * Remove a row by its iterator
+         *
+         * @param iter the iterator to identify the row by
+         * @return the new current iterator
+         */
+        row_iterator erase(const const_row_iterator &iter) {
+            return this->rows.erase(iter);
         }
 
         /**
@@ -545,7 +556,7 @@ namespace markusjx {
          *
          * @return the length of the longest row
          */
-        CSV_NODISCARD size_t maxRowLength() const {
+        CSV_NODISCARD size_t max_row_length() const {
             size_t max = 0;
             for (const csv_row<T, Sep, _escape_generator_> &row : rows) {
                 if (row.min_size() > max) {
@@ -561,7 +572,7 @@ namespace markusjx {
          *
          * @return the number of rows
          */
-        CSV_NODISCARD uint64_t numElements() const {
+        CSV_NODISCARD uint64_t num_elements() const {
             uint64_t size = 0;
             for (const csv_row<T, Sep, _escape_generator_> &row : rows) {
                 size += row.size();
@@ -666,7 +677,7 @@ namespace markusjx {
          */
         template<class U>
         CSV_NODISCARD T to_string_impl() const {
-            const size_t max = maxRowLength();
+            const size_t max = max_row_length();
             U ss;
 
             for (size_t i = 0; i < rows.size(); i++) {

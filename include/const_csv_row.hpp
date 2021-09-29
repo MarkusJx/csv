@@ -234,10 +234,14 @@ namespace markusjx {
             }
         }
 
+        /// Operator << for stream operations
         friend std::ostream &operator<<(std::ostream &stream, const const_csv_row &row) {
             stream << row.to_string();
             return stream;
         }
+
+        /// Default destructor
+        virtual ~const_csv_row() noexcept = default;
 
     protected:
         /**

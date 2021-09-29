@@ -41,7 +41,7 @@ namespace markusjx {
          * @param maxCached the number of cached elements
          */
         explicit basic_csv_file(const string_type &path, size_t maxCached = 100)
-                : toDelete(), maxCached(maxCached), cache(), path(path) {
+                : maxCached(maxCached), cache(), path(path) {
             // Assign the current line to the index of the last line in the file
             currentLine = getLastFileLineIndex();
         }
@@ -54,7 +54,8 @@ namespace markusjx {
          */
         basic_csv_file &operator=(const basic_csv<string_type, Sep, _escape_generator_> &csv) {
             clear();
-            return this->push(csv);
+            this->push(csv);
+            return *this;
         }
 
         /**
@@ -111,11 +112,8 @@ namespace markusjx {
          * @return this
          */
         basic_csv_file &operator<<(const basic_csv<string_type, Sep, _escape_generator_> &csv) {
-            // Get the current line
-            const const_csv_row<string_type, Sep, _escape_generator_> line = getCurrentLine();
-
             // Add a new line if the current line is not empty
-            if (!line.empty()) {
+            if (!getCurrentLine().empty()) {
                 this->endline();
             }
 
@@ -295,7 +293,38 @@ namespace markusjx {
          * @return the number if rows
          */
         CSV_NODISCARD uint64_t size() const {
-            return getMaxLineIndex() + 1;
+            uint64_t res = getMaxLineIndex() + 1;
+            if (res == 1 && is_file_empty()) {
+                return 0;
+            } else {
+                return res;
+            }
+        }
+
+        /**
+         * Check if the file is empty.
+         * Only checks if the actual file on the
+         * disk is empty, not if there is data in the cache.
+         *
+         * @return true if the file is empty
+         */
+        CSV_NODISCARD bool is_file_empty() const {
+            stream_type ifs = getStream(std::ios::in);
+            if (!ifs) {
+                throw exceptions::file_operation_error("Could not open the file stream");
+            } else {
+                return ifs.peek() == std::ifstream::traits_type::eof();
+            }
+        }
+
+        /**
+         * Check if the csv file is empty.
+         * Also checks if the cache is empty.
+         *
+         * @return true if the csv file is empty
+         */
+        CSV_NODISCARD bool empty() const {
+            return size() <= 0;
         }
 
         /**
@@ -303,17 +332,18 @@ namespace markusjx {
          *
          * @param index the zero-based index of the row to delete
          */
-        void remove(uint64_t index) {
+        iterator erase(uint64_t index) {
             if (index > getMaxLineIndex()) {
                 throw exceptions::index_out_of_range_error("The requested index is out of range");
             }
+
+            uint64_t index_cpy = index;
 
             // Translate the index
             translateLine(index);
 
             // Erase the line from the cache if it is stored in there
-            const const_cache_iterator it = cache.find(index);
-            if (it != cache.end()) {
+            if (const const_cache_iterator it = cache.find(index); it != cache.end()) {
                 cache.erase(it);
             }
 
@@ -327,6 +357,20 @@ namespace markusjx {
             if (getCacheSize() >= maxCached) {
                 flush();
             }
+
+            if (index_cpy > getMaxLineIndex()) {
+                return this->end();
+            } else {
+                return this->begin() + index_cpy;
+            }
+        }
+
+        iterator erase(const const_iterator &iter) {
+            return this->erase(iter - this->begin());
+        }
+
+        iterator erase(const iterator &iter) {
+            return this->erase(iter - this->begin());
         }
 
         /**
@@ -343,7 +387,7 @@ namespace markusjx {
          *
          * @return the length of the longest row
          */
-        CSV_NODISCARD size_t maxRowLength() const {
+        CSV_NODISCARD size_t max_row_length() const {
             size_t max = 0;
             for (uint64_t i = 0; i < size(); i++) {
                 size_t sz = at(i).size();
@@ -608,7 +652,7 @@ namespace markusjx {
             stream_type out(getTmpFile(), std::ios::out | std::ios::app);
             stream_type in = getStream(std::ios::in);
 
-            const size_t maxLength = maxRowLength();
+            const size_t maxLength = max_row_length();
 
             // Whether there was already a line written to the output file
             bool lineWritten = false;
@@ -636,8 +680,7 @@ namespace markusjx {
                 // Check if the cache has a value for the current line.
                 // IF so, write that to the tmp file instead of the original value.
                 // If not, write the original value to the tmp file
-                const const_cache_iterator it = cache.find(i);
-                if (it == cache.end()) {
+                if (const const_cache_iterator it = cache.find(i); it == cache.end()) {
                     out << csv_row<string_type, Sep, _escape_generator_>::parse(current).to_string(maxLength);
                 } else {
                     out << it->second.to_string(maxLength);
