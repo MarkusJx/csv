@@ -110,7 +110,7 @@ const auto cell_0_0 = csv.at(0).at(0);
 
 #### Getting the actual data
 In order to access the stored data, you can use the provided ``operator U()`` functions:
-```
+```c++
 // The stored data is an integer:
 int i = csv[0][0];
 
