@@ -545,6 +545,7 @@ namespace markusjx::util {
 #include <cstring>
 #include <vector>
 #include <ostream>
+#include <sstream>
 
 #ifndef MARKUSJX_CSV_CSV_CELL_HPP
 #define MARKUSJX_CSV_CSV_CELL_HPP
@@ -1540,6 +1541,7 @@ namespace markusjx {
 
 #include <cstring>
 #include <vector>
+#include <sstream>
 
 namespace markusjx {
     /**

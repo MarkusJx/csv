@@ -3,6 +3,7 @@
 
 #include <cstring>
 #include <vector>
+#include <sstream>
 
 #include "definitions.hpp"
 #include "util.hpp"
