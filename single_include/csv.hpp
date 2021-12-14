@@ -3263,7 +3263,7 @@ namespace markusjx {
             csv_row<string_type, Sep, _escape_generator_> row = getCurrentLine();
 
             row << csv_cell<string_type, Sep, _escape_generator_>(val);
-            writeToFile(row.to_string(), currentLine);
+            writeToFile(row, currentLine);
 
             return *this;
         }
@@ -3279,6 +3279,7 @@ namespace markusjx {
         basic_csv_file &operator<<(const U &val) {
             csv_row<string_type, Sep, _escape_generator_> &row = getCurrentLine();
             row << csv_cell<string_type, Sep, _escape_generator_>(val);
+            writeToFile(row.to_string(), currentLine);
 
             return *this;
         }

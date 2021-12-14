@@ -68,7 +68,7 @@ namespace markusjx {
             csv_row<string_type, Sep, _escape_generator_> row = getCurrentLine();
 
             row << csv_cell<string_type, Sep, _escape_generator_>(val);
-            writeToFile(row.to_string(), currentLine);
+            writeToFile(row, currentLine);
 
             return *this;
         }
@@ -85,7 +85,7 @@ namespace markusjx {
             csv_row<string_type, Sep, _escape_generator_> row = getCurrentLine();
 
             row << csv_cell<string_type, Sep, _escape_generator_>(val);
-            writeToFile(row.to_string(), currentLine);
+            writeToFile(row, currentLine);
 
             return *this;
         }
@@ -101,6 +101,7 @@ namespace markusjx {
         basic_csv_file &operator<<(const U &val) {
             csv_row<string_type, Sep, _escape_generator_> &row = getCurrentLine();
             row << csv_cell<string_type, Sep, _escape_generator_>(val);
+            writeToFile(row, currentLine);
 
             return *this;
         }
@@ -697,8 +698,7 @@ namespace markusjx {
             // Write all values that were not already written to the file into the file
             if (!cache.empty()) {
                 // Get the highest line number
-                const uint64_t max = getTranslatedMaxLineIndex();
-                for (; i <= max; ++i) {
+                for (const uint64_t maxIndex = getTranslatedMaxLineIndex(); i <= maxIndex; ++i) {
                     // Skip lines that were marked for deletion
                     if (std::find(toDelete.begin(), toDelete.end(), i) != toDelete.end()) {
                         // This line was marked for deletion, skip
@@ -716,7 +716,8 @@ namespace markusjx {
                     const const_cache_iterator it = cache.find(i);
                     if (it != cache.end()) {
                         out << it->second.to_string(maxLength);
-                    } else {
+                    } else if (i != (maxIndex - 1)) {
+                        // Only add a line only containing separators if this is not the last line
                         out << csv_row<string_type, Sep, _escape_generator_>(nullptr).to_string(maxLength);
                     }
                 }

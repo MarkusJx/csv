@@ -1378,14 +1378,14 @@ TEST_F(CSVFileTest, iteratorTest) {
 
     size_t i = 0;
     for (auto &row: file) {
-        EXPECT_EQ(csv[i++], row);
+        EXPECT_EQ(csv[i++], row) << i << row << csv[i - 1];
     }
 
     const markusjx::csv_file c_file = file;
 
     i = 0;
     for (const auto &row: c_file) {
-        EXPECT_EQ(csv[i++], row);
+        EXPECT_EQ(csv[i++], row) << i << row << csv[i - 1];
     }
 
     EXPECT_EQ(csv.size(), i);
