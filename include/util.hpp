@@ -1,6 +1,7 @@
 #ifndef MARKUSJX_CSV_UTIL_HPP
 #define MARKUSJX_CSV_UTIL_HPP
 
+#include <string>
 #include <cstdlib>
 #include <cstring>
 #include <type_traits>
