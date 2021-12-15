@@ -391,7 +391,7 @@ as with mathematical operations apply to integers.
 both values will be compared as strings.**
 
 ### Type checks
-You may also get the type of a cell value:
+You may also get the type of a cell's value:
 ```c++
 // Check if the value is a boolean
 bool is_bool = csv[0][0].isBoolean();

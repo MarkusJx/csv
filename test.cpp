@@ -922,9 +922,10 @@ TEST_F(CSVFileTest, writeReadTest) {
             csv << markusjx::csv::endl;
         }
 
+        file << markusjx::csv::endl;
         file.flush();
 
-        EXPECT_EQ(file.size(), csv.size());
+        EXPECT_EQ(file.size() - 1, csv.size());
         EXPECT_EQ(file.to_basic_csv(), csv);
     }
     std::remove("test.csv");
@@ -958,7 +959,7 @@ TEST_F(CSVFileTest, randomWriteTest) {
 TEST_F(CSVFileTest, randomReadTest) {
     //for (int x = 0; x < 1000; x++) {
     std::remove("test.csv");
-    markusjx::csv_file file("test.csv", 1000);
+    markusjx::csv_file file("test.csv", 200);
     markusjx::csv csv;
 
     for (int i = 0; i < 1000; i++) {
@@ -1178,8 +1179,10 @@ TEST_F(CSVFileTest, cacheDeleteTest) {
             }
         }
 
+        file << markusjx::csv::endl;
+
         // Just check if both objects are the same size, any other check would trigger a flush
-        EXPECT_EQ(file.size(), csv.size());
+        EXPECT_EQ(file.size() - 1, csv.size());
 
         // We can't actually always remove 50 lines. If there are less
         // than 50 lines we'll get an arithmetic exception, which is not so good
@@ -1190,7 +1193,7 @@ TEST_F(CSVFileTest, cacheDeleteTest) {
             csv.erase(pos);
         }
 
-        EXPECT_EQ(file.size(), csv.size());
+        EXPECT_EQ(file.size() - 1, csv.size());
         EXPECT_EQ(file.to_basic_csv(), csv);
         std::remove("test.csv");
     }
@@ -1268,8 +1271,9 @@ TEST_F(CSVFileTest, cacheDeleteAccessTest) {
             }
         }
 
+        file << markusjx::csv::endl;
         // Just check if both objects are the same size, any other check would trigger a flush
-        EXPECT_EQ(file.size(), csv.size());
+        EXPECT_EQ(file.size() - 1, csv.size());
 
         // We can't actually always remove 50 lines. If there are less
         // than 50 lines we'll get an arithmetic exception, which is not so good
@@ -1286,12 +1290,12 @@ TEST_F(CSVFileTest, cacheDeleteAccessTest) {
                 EXPECT_EQ(file[p1], csv[p1]);
             }
 
-            EXPECT_EQ(file.size(), csv.size());
+            EXPECT_EQ(file.size() - 1, csv.size());
             EXPECT_EQ(file[p1], csv[p1]);
             EXPECT_EQ(file[p2], csv[p2]);
         }
 
-        EXPECT_EQ(file.size(), csv.size());
+        EXPECT_EQ(file.size() - 1, csv.size());
         EXPECT_EQ(file.to_basic_csv(), csv);
         std::remove("test.csv");
     }
@@ -1348,7 +1352,9 @@ TEST_F(CSVFileTest, cacheDeleteAppendTest) {
             }
         }
 
-        EXPECT_EQ(file.size(), csv.size());
+        file << markusjx::csv::endl;
+
+        EXPECT_EQ(file.size() - 1, csv.size());
         EXPECT_EQ(file.to_basic_csv(), csv);
         std::remove("test.csv");
     }
