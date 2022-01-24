@@ -3491,10 +3491,11 @@ namespace markusjx {
          */
         CSV_NODISCARD bool is_file_empty() const {
             stream_type ifs = getStream(std::ios::in);
-            if (!ifs) {
-                throw exceptions::file_operation_error("Could not open the file stream");
-            } else {
+            if (ifs) {
                 return ifs.peek() == std::ifstream::traits_type::eof();
+            } else {
+                // Unable to open the file, it is probably empty
+                return true;
             }
         }
 
